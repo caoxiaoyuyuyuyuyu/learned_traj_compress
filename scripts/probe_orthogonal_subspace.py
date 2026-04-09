@@ -344,6 +344,8 @@ def main():
     parser = argparse.ArgumentParser(description="Phase 1c: Principal Direction Activation Shift Probing")
     parser.add_argument("--rl_dir", default="/root/autodl-tmp/models/MEM1")
     parser.add_argument("--base_dir", default="/root/autodl-tmp/models/Qwen2.5-7B")
+    parser.add_argument("--sft_dir", default="/root/autodl-tmp/models/Qwen2.5-7B-SFT-N2",
+                        help="SFT baseline model for three-way comparison")
     parser.add_argument("--output_path", default="/root/autodl-tmp/learned_traj_compress/artifacts/exp_004_probe_results.json")
     parser.add_argument("--cache_dir", default="/root/autodl-tmp/.hf_cache")
     parser.add_argument("--samples_per_n", type=int, default=50)
@@ -458,8 +460,24 @@ def main():
     torch.cuda.empty_cache()
     print(f"  Collected RL hidden states + labels for {len(sample_labels)} samples")
 
+    # --- Collect SFT model hidden states ---
+    hs_sft = None
+    if os.path.exists(args.sft_dir):
+        print("[4b/7] Collecting SFT model hidden states...")
+        sft_model = AutoModelForCausalLM.from_pretrained(
+            args.sft_dir, torch_dtype=torch.float16, device_map=args.device,
+            trust_remote_code=True)
+        hs_sft = collect_hidden_states(sft_model, tokenizer, prompts, LAYER_INDICES,
+                                       device=args.device)
+        del sft_model
+        gc.collect()
+        torch.cuda.empty_cache()
+        print(f"  Collected SFT hidden states: {', '.join(f'L{l}: {v.shape}' for l, v in hs_sft.items())}")
+    else:
+        print(f"[4b/7] SFT model not found at {args.sft_dir}, skipping SFT comparison")
+
     # --- Compute Δh and run probes ---
-    print("[5/6] Computing activation deltas and running probes...")
+    print("[5/7] Computing activation deltas and running probes...")
 
     mean_ems = np.array([s["mean_em"] for s in sample_labels])
     binary_labels = (mean_ems > 0.5).astype(int)
@@ -511,6 +529,14 @@ def main():
                 f"h_base_principal_k{k}": project_to_subspace(H_base, V_base_k),
             }
 
+            # SFT comparison features (if available)
+            if hs_sft is not None:
+                H_sft = hs_sft[l]
+                delta_H_sft = H_sft - H_base  # SFT activation shift
+                features[f"delta_h_sft_principal_k{k}"] = project_to_subspace(delta_H_sft, V_base_k)
+                features["delta_h_sft_full"] = delta_H_sft
+                features[f"h_sft_principal_k{k}"] = project_to_subspace(H_sft, V_base_k)
+
             # Random subspace baselines (Δh projected to random directions)
             for rs_idx, V_rand in enumerate(random_Vs[k]):
                 features[f"delta_h_random_{rs_idx}"] = project_to_subspace(delta_H, V_rand)
@@ -519,6 +545,15 @@ def main():
             delta_h_in_principal = project_to_subspace(delta_H, V_base_k)  # [n, k]
             delta_h_reconstructed = delta_h_in_principal @ V_base_k.T  # [n, d]
             energy_in = np.sum(delta_h_reconstructed ** 2) / (np.sum(delta_H ** 2) + 1e-12)
+
+            # SFT energy (if available)
+            energy_in_sft = None
+            if hs_sft is not None:
+                H_sft = hs_sft[l]
+                delta_H_sft = H_sft - H_base
+                dh_sft_in = project_to_subspace(delta_H_sft, V_base_k)
+                dh_sft_recon = dh_sft_in @ V_base_k.T
+                energy_in_sft = float(np.sum(dh_sft_recon ** 2) / (np.sum(delta_H_sft ** 2) + 1e-12))
 
             # Binary probes
             print(f"      Running binary probes...")
@@ -552,28 +587,35 @@ def main():
             k_results[str(k)] = {
                 "base_var_explained": float(base_var_explained),
                 "delta_h_energy_in_principal": float(energy_in),
+                "delta_h_sft_energy_in_principal": energy_in_sft,
                 "binary_probes": binary_results,
                 "regression_probes": reg_results,
             }
 
             # Print summary
+            # Feature names to display
+            display_names = ["h_rl_full", "delta_h_full",
+                             f"delta_h_principal_k{k}", f"h_rl_principal_k{k}",
+                             f"h_base_principal_k{k}", "delta_h_random_avg"]
+            if hs_sft is not None:
+                display_names.extend([f"delta_h_sft_principal_k{k}", "delta_h_sft_full",
+                                      f"h_sft_principal_k{k}"])
+
             for ptype, res in [("binary", binary_results), ("regression", reg_results)]:
                 print(f"      [{ptype}]")
-                for name in ["h_rl_full", "delta_h_full",
-                             f"delta_h_principal_k{k}", f"h_rl_principal_k{k}",
-                             f"h_base_principal_k{k}", "delta_h_random_avg"]:
+                for name in display_names:
                     if name in res and "error" not in res[name]:
                         if ptype == "binary":
                             acc = res[name]['accuracy_mean']
                             auc_str = f" auc={res[name]['auc_mean']:.3f}" if res[name].get('auc_mean') else ""
-                            print(f"        {name:>30s}: acc={acc:.3f}±{res[name]['accuracy_std']:.3f}{auc_str}")
+                            print(f"        {name:>35s}: acc={acc:.3f}±{res[name]['accuracy_std']:.3f}{auc_str}")
                         else:
                             r2 = res[name].get('r2_mean')
                             corr = res[name].get('corr_mean')
                             if r2 is not None:
-                                print(f"        {name:>30s}: R²={r2:.3f}" + (f" corr={corr:.3f}" if corr else ""))
+                                print(f"        {name:>35s}: R²={r2:.3f}" + (f" corr={corr:.3f}" if corr else ""))
                             else:
-                                print(f"        {name:>30s}: N/A")
+                                print(f"        {name:>35s}: N/A")
 
         layer_results[str(l)] = {
             "delta_h_norm_mean": float(delta_norms.mean()),
@@ -588,6 +630,9 @@ def main():
     # Go/no-go: principal Δh probe > random Δh probe in majority of comparisons
     principal_wins = 0
     total_comparisons = 0
+    # Also: RL principal Δh > SFT principal Δh (RL-specific mechanism)
+    rl_over_sft_wins = 0
+    rl_sft_comparisons = 0
 
     for l_str, l_res in layer_results.items():
         for k_str, k_res in l_res["k_analysis"].items():
@@ -596,20 +641,29 @@ def main():
                 probes = k_res[ptype]
                 principal = probes.get(f"delta_h_principal_k{k}", {})
                 rand_avg = probes.get("delta_h_random_avg", {})
+                sft_principal = probes.get(f"delta_h_sft_principal_k{k}", {})
 
                 if ptype == "binary_probes":
                     p_val = principal.get("accuracy_mean")
                     r_val = rand_avg.get("accuracy_mean")
+                    s_val = sft_principal.get("accuracy_mean")
                 else:
                     p_val = principal.get("r2_mean")
                     r_val = rand_avg.get("r2_mean")
+                    s_val = sft_principal.get("r2_mean")
 
                 if p_val is not None and r_val is not None:
                     total_comparisons += 1
                     if p_val > r_val:
                         principal_wins += 1
 
+                if p_val is not None and s_val is not None:
+                    rl_sft_comparisons += 1
+                    if p_val > s_val:
+                        rl_over_sft_wins += 1
+
     advantage_rate = principal_wins / total_comparisons if total_comparisons > 0 else 0
+    rl_sft_advantage = rl_over_sft_wins / rl_sft_comparisons if rl_sft_comparisons > 0 else None
 
     output = {
         "config": {
@@ -631,10 +685,19 @@ def main():
         },
         "layer_results": layer_results,
         "go_no_go": {
-            "principal_advantage": bool(advantage_rate > 0.5),
-            "principal_advantage_rate": float(advantage_rate),
-            "detail": f"Principal Δh probe outperforms random Δh probe in {principal_wins}/{total_comparisons} comparisons",
-            "overall": "GO" if advantage_rate > 0.6 else "PARTIAL" if advantage_rate > 0.4 else "NO-GO",
+            "principal_vs_random": {
+                "advantage": bool(advantage_rate > 0.5),
+                "rate": float(advantage_rate),
+                "detail": f"Principal Δh > random Δh in {principal_wins}/{total_comparisons}",
+            },
+            "rl_vs_sft": {
+                "advantage": bool(rl_sft_advantage > 0.5) if rl_sft_advantage is not None else None,
+                "rate": float(rl_sft_advantage) if rl_sft_advantage is not None else None,
+                "detail": f"RL Δh > SFT Δh in {rl_over_sft_wins}/{rl_sft_comparisons}" if rl_sft_comparisons > 0 else "no SFT model",
+            },
+            "overall": "GO" if (advantage_rate > 0.6 and (rl_sft_advantage is None or rl_sft_advantage > 0.5))
+                       else "PARTIAL" if advantage_rate > 0.4
+                       else "NO-GO",
         },
         "sample_labels": sample_labels,
     }
@@ -655,33 +718,53 @@ def main():
         mask = n_values_arr == n
         print(f"  N={n}: mean_em={mean_ems[mask].mean():.3f}, n={mask.sum()}")
 
+    has_sft = hs_sft is not None
+    sft_cols = ["Δh_sft"] if has_sft else []
+
     for k in K_VALUES:
-        print(f"\n--- k={k} ---")
-        print(f"{'Layer':>6} {'Δh_full':>10} {'Δh_princ':>10} {'Δh_random':>10} {'h_rl':>10} {'h_base':>10} {'Δh_energy':>10}")
+        print(f"\n--- k={k} (Binary Accuracy) ---")
+        header = f"{'Layer':>6} {'Δh_full':>10} {'Δh_princ':>10} {'Δh_random':>10}"
+        if has_sft:
+            header += f" {'Δh_sft':>10}"
+        header += f" {'h_rl':>10} {'h_base':>10} {'energy':>8}"
+        print(header)
+
         for l in LAYER_INDICES:
             l_res = layer_results[str(l)]
             k_res = l_res["k_analysis"][str(k)]
             bp = k_res["binary_probes"]
 
+            names = ["delta_h_full", f"delta_h_principal_k{k}", "delta_h_random_avg"]
+            if has_sft:
+                names.append(f"delta_h_sft_principal_k{k}")
+            names.extend([f"h_rl_principal_k{k}", f"h_base_principal_k{k}"])
+
             vals = []
-            for name in ["delta_h_full", f"delta_h_principal_k{k}", "delta_h_random_avg",
-                         f"h_rl_principal_k{k}", f"h_base_principal_k{k}"]:
+            for name in names:
                 v = bp.get(name, {}).get("accuracy_mean")
                 vals.append(f"{v:.3f}" if v is not None else "N/A")
             vals.append(f"{k_res['delta_h_energy_in_principal']:.3f}")
-
             print(f"  L{l:>3}: {'  '.join(f'{v:>10}' for v in vals)}")
 
         print(f"\nRegression R²:")
-        print(f"{'Layer':>6} {'Δh_full':>10} {'Δh_princ':>10} {'Δh_random':>10} {'h_rl':>10} {'h_base':>10}")
+        header = f"{'Layer':>6} {'Δh_full':>10} {'Δh_princ':>10} {'Δh_random':>10}"
+        if has_sft:
+            header += f" {'Δh_sft':>10}"
+        header += f" {'h_rl':>10} {'h_base':>10}"
+        print(header)
+
         for l in LAYER_INDICES:
             l_res = layer_results[str(l)]
             k_res = l_res["k_analysis"][str(k)]
             rp = k_res["regression_probes"]
 
+            names = ["delta_h_full", f"delta_h_principal_k{k}", "delta_h_random_avg"]
+            if has_sft:
+                names.append(f"delta_h_sft_principal_k{k}")
+            names.extend([f"h_rl_principal_k{k}", f"h_base_principal_k{k}"])
+
             vals = []
-            for name in ["delta_h_full", f"delta_h_principal_k{k}", "delta_h_random_avg",
-                         f"h_rl_principal_k{k}", f"h_base_principal_k{k}"]:
+            for name in names:
                 v = rp.get(name, {}).get("r2_mean")
                 vals.append(f"{v:.3f}" if v is not None else "N/A")
             print(f"  L{l:>3}: {'  '.join(f'{v:>10}' for v in vals)}")
