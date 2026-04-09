@@ -2,8 +2,9 @@
 
 # Model paths
 models:
-  teacher: "Mem-Lab/Qwen2.5-7B-RL-RAG-Q2-EM-Release"
-  teacher_base: "Qwen/Qwen2.5-7B"  # base model if teacher is LoRA adapter
+  teacher_adapter: "Mem-Lab/Qwen2.5-7B-RL-RAG-Q2-EM-Release"  # LoRA adapter (~32MB)
+  teacher_base: "Qwen/Qwen2.5-7B"  # base model for adapter merge
+  teacher_merged: null  # path to pre-merged model (set after merge to skip runtime merge)
   students:
     - "Qwen/Qwen2.5-0.5B"
     - "Qwen/Qwen2.5-1.5B"
