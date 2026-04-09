@@ -317,7 +317,7 @@ def run_statistical_tests(
                 tests[f"{model_name}_n{high_n}_vs_n{base_n}"] = {
                     "u_stat": round(float(u_stat), 2),
                     "p_value": round(float(p_value), 6),
-                    "significant": p_value < 0.05,
+                    "significant": bool(p_value < 0.05),
                 }
             except ValueError:
                 tests[f"{model_name}_n{high_n}_vs_n{base_n}"] = {
