@@ -1,14 +1,13 @@
 # MemDistill base configuration
 
-# Model paths
+# Model paths (local paths on autodl-ltc: /root/autodl-tmp/models/)
 models:
-  teacher_adapter: "Mem-Lab/Qwen2.5-7B-RL-RAG-Q2-EM-Release"  # LoRA adapter (~32MB)
-  teacher_base: "Qwen/Qwen2.5-7B"  # base model for adapter merge
-  teacher_merged: null  # path to pre-merged model (set after merge to skip runtime merge)
+  teacher_model: "/root/autodl-tmp/models/Qwen2.5-7B-RL-RAG-Q2-EM-Release"  # MEM1 7B RL policy (full model, stored as float32, loaded as bf16)
+  teacher_base: "/root/autodl-tmp/models/Qwen2.5-7B"  # Qwen2.5-7B base (for SFT baseline training)
   students:
-    - "Qwen/Qwen2.5-0.5B"
-    - "Qwen/Qwen2.5-1.5B"
-    - "Qwen/Qwen2.5-3B"
+    - "/root/autodl-tmp/models/Qwen2.5-0.5B"
+    - "/root/autodl-tmp/models/Qwen2.5-1.5B"
+    - "/root/autodl-tmp/models/Qwen2.5-3B"
   tokenizer: null  # defaults to model name
 
 # Data paths
