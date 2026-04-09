@@ -1,0 +1,41 @@
+# Phase 2: Distillation configuration
+
+# Best-of-N pair construction (Phase 2a)
+bon:
+  n_candidates: 8
+  temperature: 0.7
+  pair_method: "best_worst"  # best_worst, best_vs_rest, adjacent
+  min_reward_gap: 0.0
+
+# Teacher filtering (Phase 2b)
+teacher_filter:
+  enabled: true
+  threshold: null  # null = use percentile
+  percentile: 50.0
+
+# Cold start (Phase 2c)
+cold_start:
+  max_objectives: 2
+  epochs: 3
+  lr: 2.0e-5
+
+# Curriculum learning (Phase 2d)
+curriculum:
+  min_objectives: 1
+  max_objectives: 16
+  strategy: "linear"  # linear, exponential, step
+  total_steps: 10000
+
+# DPO training
+dpo:
+  beta: 0.1
+  lr: 5.0e-6
+  epochs: 1
+  max_length: 4096
+  max_prompt_length: 1024
+
+# Deferral (Phase 2e)
+deferral:
+  enabled: true
+  confidence_method: "entropy"
+  threshold: 0.5

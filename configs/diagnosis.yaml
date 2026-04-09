@@ -1,0 +1,33 @@
+# Phase 1: Diagnosis configuration
+
+# SVD rotation analysis (Phase 1a)
+svd_rotation:
+  layer_ids: [0, 4, 8, 12, 16, 20, 24]  # adjust per model depth
+  max_samples: 1000
+  batch_size: 32
+
+# Mode collapse detection (Phase 1b)
+mode_collapse:
+  n_gram_orders: [1, 2, 3, 4]
+  n_clusters: 5
+  n_samples: 500
+
+# Information probing (Phase 1c)
+probing:
+  layer_ids: [8, 16, 24]
+  probe_epochs: 100
+  probe_lr: 1.0e-3
+  val_split: 0.2
+
+# Capacity experiments (Phase 1d)
+capacity:
+  model_sizes: ["Qwen/Qwen2.5-0.5B", "Qwen/Qwen2.5-1.5B", "Qwen/Qwen2.5-3B"]
+  n_objectives_list: [1, 2, 4, 8, 16]
+  samples_per_condition: 200
+
+# Prompt/CoT control (Phase 1e)
+prompt_control:
+  cot_styles: ["step_by_step", "objective_by_objective", "plan_then_solve"]
+  n_prompt_variants: 5
+  n_samples: 100
+  n_objectives_list: [1, 4, 8, 16]

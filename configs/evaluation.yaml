@@ -1,0 +1,37 @@
+# Phase 3: Evaluation configuration
+
+# EM evaluation (Phase 3a)
+em_eval:
+  n_objectives_list: [1, 2, 4, 8, 16]
+  n_samples: 200
+  temperature: 0.0  # greedy
+  max_new_tokens: 2048
+  min_answer_tags: 2
+
+# Transfer evaluation (Phase 3b)
+transfer:
+  datasets: ["swe_smith"]
+  max_samples: 100
+  max_new_tokens: 4096
+
+# Ablation studies (Phase 3c)
+ablation:
+  components:
+    - name: "no_bon"
+      overrides: { bon: { enabled: false } }
+    - name: "no_teacher_filter"
+      overrides: { teacher_filter: { enabled: false } }
+    - name: "no_cold_start"
+      overrides: { cold_start: { enabled: false } }
+    - name: "no_curriculum"
+      overrides: { curriculum: { enabled: false } }
+    - name: "no_deferral"
+      overrides: { deferral: { enabled: false } }
+    - name: "sft_only"
+      overrides: { dpo: { enabled: false } }
+
+# Mechanistic analysis (Phase 3d)
+mechanistic:
+  layer_ids: null  # null = all layers
+  n_samples: 500
+  metrics: ["cka", "effective_rank", "drift_magnitude"]

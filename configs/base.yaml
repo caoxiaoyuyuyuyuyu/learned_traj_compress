@@ -1,0 +1,45 @@
+# MemDistill base configuration
+
+# Model paths
+models:
+  teacher: "Mem-Lab/Qwen2.5-7B-RL-RAG-Q2-EM-Release"
+  teacher_base: "Qwen/Qwen2.5-7B"  # base model if teacher is LoRA adapter
+  students:
+    - "Qwen/Qwen2.5-0.5B"
+    - "Qwen/Qwen2.5-1.5B"
+    - "Qwen/Qwen2.5-3B"
+  tokenizer: null  # defaults to model name
+
+# Data paths
+data:
+  mem1_dir: "data/mem1"
+  swe_smith_dir: "data/swe_smith"
+  output_dir: "outputs"
+  cache_dir: "cache"
+
+# Common hyperparameters
+training:
+  seed: 42
+  dtype: "bfloat16"
+  gradient_checkpointing: true
+  max_seq_length: 4096
+  per_device_batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0
+  num_epochs: 3
+
+# LoRA configuration
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+# W&B logging
+wandb:
+  project: "learned_traj_compress"
+  entity: "xiaoyucorynne-"
+  tags: []
