@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -29,7 +30,7 @@ from datasets import load_dataset
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.utils.metrics import extract_solution, evaluate_multi_objective
+from src.utils.metrics import normalize_answer, em_check, compute_f1
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,8 @@ def load_qa_pool(cache_dir: str, seed: int) -> list[dict]:
     Only uses datasets with real gold passages to avoid data leakage.
     HotpotQA validation has ~7405 samples, sufficient for 16*50=800 needed.
 
-    Each item: {"question": str, "answers": list[str], "passage": str}
+    Each item: {"question": str, "answers": list[str], "passages": list[dict]}
+    where passages[i] = {"title": str, "text": str}
     """
     rng = random.Random(seed)
     pool = []
@@ -66,18 +68,16 @@ def load_qa_pool(cache_dir: str, seed: int) -> list[dict]:
     print("Loading HotpotQA validation split...")
     hotpot = load_dataset("hotpot_qa", "distractor", split="validation", cache_dir=cache_dir)
     for item in hotpot:
-        # Concatenate the supporting paragraphs as the gold passage
-        passage_parts = []
         sup_titles = set(item["supporting_facts"]["title"])
+        passages = []
         for title, sentences in zip(item["context"]["title"], item["context"]["sentences"]):
             if title in sup_titles:
-                passage_parts.append(title + ": " + " ".join(sentences))
-        passage = " ".join(passage_parts)
-        if passage.strip():
+                passages.append({"title": title, "text": " ".join(sentences)})
+        if passages:
             pool.append({
                 "question": item["question"],
                 "answers": [item["answer"]],
-                "passage": passage,
+                "passages": passages,
                 "source": "hotpotqa",
             })
 
@@ -107,69 +107,104 @@ def build_samples(pool: list[dict], n: int, num_samples: int, seed: int) -> list
 
 
 # ---------------------------------------------------------------------------
-# Prompt construction
+# Prompt construction (MEM1 original format)
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = (
-    "You are a helpful assistant. You have access to a search engine. "
-    "You need to answer all of the following questions. For each question, "
-    "search for information and then provide the answer."
-)
+MEM1_MULTI_PROMPT = """You will answer multiple complex questions using iterative reasoning, summarization, and web search.
+
+At each step, you will see the questions, a cumulative summary of relevant information, the current search query, and search results (except in the first step, where only the questions are provided). Your task is to:
+
+1. Perform reasoning and update a cumulative, concise summary within <think> ... </think>. This acts as persistent memory and must include all essential information from previous <think> and <information> tags.
+
+2. Then choose one of the following actions:
+   - If any question remains unanswered, issue a single query for one question inside <search> ... </search>. The query should consist of keywords or a short phrase. Only search one question at a time.
+   - If all questions are answered, provide the final answers—separated by semicolons—within <answer> answer1; answer2; ... </answer>. The answers must be concise, contain only essential words, and avoid any explanations.
+
+Important:
+- Always follow this structure after <information> or the initial questions: <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>.
+- Do not search multiple queries or questions simultaneously.
+
+Answer the following questions: {questions}"""
 
 
 def build_prompt(sample: list[dict], tokenizer, max_tokens: int = MAX_INPUT_TOKENS) -> str:
-    """Build MEM1-style multi-objective prompt with gold passages.
+    """Build prompt matching MEM1 training format with gold passages.
 
-    Returns the full prompt string after applying chat template.
+    Simulates the state where model has already searched and received results,
+    now on the last turn and must answer. No system prompt — all instructions
+    in user message, matching MEM1 training distribution.
     """
-    # Build question list
-    q_lines = []
-    for i, item in enumerate(sample, 1):
-        q_lines.append(f"Q{i}: {item['question']}")
+    questions = [item["question"] for item in sample]
+    questions_str = "; ".join(questions)
+    user_content = MEM1_MULTI_PROMPT.format(questions=questions_str)
 
-    # Build passage list
-    p_lines = []
-    for i, item in enumerate(sample, 1):
-        p_lines.append(f"[{i}] {item['passage']}")
+    # Collect all passages from all items in the sample
+    all_passages = []
+    for item in sample:
+        for p in item["passages"]:
+            all_passages.append(p)
 
-    user_content = (
-        "Answer all of the following questions:\n"
-        + "\n".join(q_lines)
-        + "\n\nHere are relevant passages:\n"
-        + "\n".join(p_lines)
-        + "\n\nBased on the passages above, provide your answers separated by semicolons in <answer> tags."
+    # Build <information> block with MEM1's Doc format
+    info_lines = ["[HINT]You have 1 turn left. You must answer the question now.[/HINT]"]
+    for i, p in enumerate(all_passages, 1):
+        info_lines.append(f"Doc {i}(Title: {p['title']}) {p['text']}")
+    info_block = "\n".join(info_lines)
+
+    # Assistant prefix: simulate one search round completed
+    search_query = questions[0].split()[:5]
+    assistant_prefix = (
+        f"<think>Let me search for information about these questions.</think>"
+        f"<search>{' '.join(search_query)}</search>\n\n"
+        f"<information>\n{info_block}\n</information>\n"
     )
 
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
+        {"role": "assistant", "content": assistant_prefix},
     ]
 
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    # Apply chat template, strip trailing <|im_end|> to let model continue
+    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    if prompt.endswith("<|im_end|>\n"):
+        prompt = prompt[: -len("<|im_end|>\n")]
+    elif prompt.endswith("<|im_end|>"):
+        prompt = prompt[: -len("<|im_end|>")]
 
     # Truncate passages if too long
     token_count = len(tokenizer.encode(prompt))
     if token_count > max_tokens:
-        # Truncate each passage proportionally
         overflow = token_count - max_tokens
-        chars_to_cut = overflow * 4  # rough estimate: 1 token ~ 4 chars
-        cut_per_passage = chars_to_cut // len(sample) + 1
-        for item in sample:
-            if len(item["passage"]) > cut_per_passage + 50:
-                item["passage"] = item["passage"][:-(cut_per_passage)] + "..."
-        # Rebuild
-        p_lines = [f"[{i}] {item['passage']}" for i, item in enumerate(sample, 1)]
-        user_content = (
-            "Answer all of the following questions:\n"
-            + "\n".join(q_lines)
-            + "\n\nHere are relevant passages:\n"
-            + "\n".join(p_lines)
-            + "\n\nBased on the passages above, provide your answers separated by semicolons in <answer> tags."
+        chars_to_cut = overflow * 4
+        cut_per_passage = chars_to_cut // len(all_passages) + 1
+        for p in all_passages:
+            if len(p["text"]) > cut_per_passage + 50:
+                p["text"] = p["text"][:-(cut_per_passage)] + "..."
+        # Rebuild info block and prompt
+        info_lines = ["[HINT]You have 1 turn left. You must answer the question now.[/HINT]"]
+        for i, p in enumerate(all_passages, 1):
+            info_lines.append(f"Doc {i}(Title: {p['title']}) {p['text']}")
+        info_block = "\n".join(info_lines)
+        assistant_prefix = (
+            f"<think>Let me search for information about these questions.</think>"
+            f"<search>{' '.join(search_query)}</search>\n\n"
+            f"<information>\n{info_block}\n</information>\n"
         )
-        messages[1]["content"] = user_content
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        messages[1]["content"] = assistant_prefix
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        if prompt.endswith("<|im_end|>\n"):
+            prompt = prompt[: -len("<|im_end|>\n")]
+        elif prompt.endswith("<|im_end|>"):
+            prompt = prompt[: -len("<|im_end|>")]
 
     return prompt
+
+
+def extract_answer(text: str) -> str | None:
+    """Extract answer from MEM1-style output (after <think>, get <answer>)."""
+    matches = list(re.finditer(r"<answer>(.*?)</answer>", text, re.DOTALL))
+    if not matches:
+        return None
+    return matches[-1].group(1).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -237,29 +272,46 @@ def evaluate_model_full(
             total_tokens += n_tokens
             total_time += elapsed
 
-            eval_result = evaluate_multi_objective(
-                output_text, ground_truths, min_answer_tags=1
-            )
+            # Extract answer using MEM1-style extraction
+            raw_answer = extract_answer(output_text)
+            extraction_failed = raw_answer is None
+
+            if extraction_failed:
+                per_question = [{"em": 0, "f1": 0.0, "prediction": ""} for _ in ground_truths]
+                em_mean = 0.0
+                f1_mean = 0.0
+                em_total = 0
+            else:
+                parts = [a.strip() for a in raw_answer.split(";")]
+                per_question = []
+                for idx, golden_answers in enumerate(ground_truths):
+                    pred = parts[idx] if idx < len(parts) else ""
+                    em = em_check(pred, golden_answers)
+                    f1 = compute_f1(pred, golden_answers)
+                    per_question.append({"em": int(em), "f1": float(f1), "prediction": pred})
+                em_total = sum(q["em"] for q in per_question)
+                em_mean = em_total / n if n > 0 else 0.0
+                f1_mean = sum(q["f1"] for q in per_question) / n if n > 0 else 0.0
 
             sample_results.append({
                 "n_objectives": n,
-                "em_mean": eval_result["em_mean"],
-                "f1_mean": eval_result["f1_mean"],
-                "em_total": eval_result["em_total"],
-                "extraction_failed": eval_result["extraction_failed"],
-                "per_question": eval_result["per_question"],
+                "em_mean": float(em_mean),
+                "f1_mean": float(f1_mean),
+                "em_total": int(em_total),
+                "extraction_failed": bool(extraction_failed),
+                "per_question": per_question,
                 "output_text": output_text[:500],
                 "elapsed_s": round(elapsed, 2),
-                "n_tokens": n_tokens,
+                "n_tokens": int(n_tokens),
             })
 
-            ems.append(eval_result["em_mean"])
-            f1s.append(eval_result["f1_mean"])
+            ems.append(float(em_mean))
+            f1s.append(float(f1_mean))
 
-            if eval_result["extraction_failed"]:
+            if extraction_failed:
                 extraction_fails += 1
 
-            for q in eval_result["per_question"]:
+            for q in per_question:
                 total_objectives += 1
                 if q["em"] == 0:
                     collapsed_objectives += 1
@@ -456,7 +508,7 @@ def main():
     print("\n=== Evaluating MEM1 ===")
     model = AutoModelForCausalLM.from_pretrained(
         args.mem1_dir,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="cuda:0",
     )
     model.eval()
@@ -473,7 +525,7 @@ def main():
         print("\n=== Evaluating Qwen2.5-7B base ===")
         model = AutoModelForCausalLM.from_pretrained(
             args.base_dir,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             device_map="cuda:0",
         )
         model.eval()
