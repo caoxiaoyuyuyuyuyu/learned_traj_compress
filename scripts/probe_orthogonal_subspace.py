@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """
-Phase 1c: Per-objective Probing — Orthogonal Subspace Analysis
+Phase 1c: Per-objective Probing — Principal Direction Activation Shift
 
-Verify that the RL's orthogonal subspace information (97.6% of ΔW energy,
-from Phase 1b) directly encodes multi-objective processing capability.
+Verify that RL's supra-random alignment with base principal directions
+(2-6x random, from Phase 1b corrected) encodes multi-objective capability.
+
+Hypothesis (revised after exp_003b):
+"RL在base主方向上的精细调整编码了多目标consolidation能力"
 
 Method:
 1. Run MEM1 RL + Qwen2.5-7B base on Phase 1a HotpotQA samples → collect
    hidden states at selected layers (last token before generation)
-2. Compute base model activation principal subspace via SVD
-3. Project RL hidden states into: base subspace / orthogonal complement / random
-4. Train linear probes on each subspace to predict task performance
-5. Compare probe accuracy: if orth > base → RL capability lives in new directions
+2. Compute activation delta: Δh = h_RL - h_base
+3. Compute base activation principal subspace via SVD (k=64 and k=256)
+4. Project Δh into: base principal subspace / random subspace (control)
+5. Train linear probes on each projection to predict per-objective EM
+6. If principal Δh probe >> random Δh probe → RL's fine-tuning along
+   principal directions encodes task capability
 
 Usage:
-    python scripts/probe_orthogonal_subspace.py [--dry_run] [--subspace_k 256]
+    python scripts/probe_orthogonal_subspace.py [--dry_run]
 """
 
 import argparse
@@ -160,13 +165,10 @@ def build_prompt(sample, tokenizer, max_tokens=MAX_INPUT_TOKENS):
 def normalize_answer(s):
     import string
     s = s.lower().strip()
-    # Remove articles
     for art in ["a ", "an ", "the "]:
         while s.startswith(art):
             s = s[len(art):]
-    # Remove punctuation
     s = "".join(c for c in s if c not in string.punctuation)
-    # Collapse whitespace
     s = " ".join(s.split())
     return s
 
@@ -205,11 +207,8 @@ def collect_hidden_states(model, tokenizer, prompts, layer_indices, device="cuda
 
         outputs = model(**inputs, output_hidden_states=True)
 
-        # outputs.hidden_states is tuple of (n_layers+1) tensors, each [batch, seq_len, hidden]
-        # Index 0 = embedding output, index l+1 = after layer l
         for l in layer_indices:
             hs = outputs.hidden_states[l + 1]  # after layer l
-            # Get last non-padding token for each sample
             for b in range(hs.shape[0]):
                 attn_mask = inputs["attention_mask"][b]
                 last_pos = attn_mask.sum().item() - 1
@@ -230,33 +229,18 @@ def compute_activation_subspace(H, k):
 
     Returns V_k: [hidden_dim, k] — the top-k right singular vectors.
     """
-    # Center the activations
     H_centered = H - H.mean(axis=0, keepdims=True)
-    # SVD
     _, S, Vt = np.linalg.svd(H_centered, full_matrices=False)
     V_k = Vt[:k].T  # [hidden_dim, k]
     explained_var = (S[:k] ** 2).sum() / (S ** 2).sum()
-    return V_k, float(explained_var)
+    return V_k, float(explained_var), S
 
 
 def project_to_subspace(H, V_k):
     """Project H onto subspace spanned by columns of V_k.
-
     Returns H_proj: [n_samples, k] — coordinates in the subspace.
     """
     return H @ V_k  # [n, k]
-
-
-def project_to_orthogonal(H, V_k):
-    """Project H onto orthogonal complement of V_k subspace.
-
-    Returns H_orth: [n_samples, d-k] in the orthogonal space coordinates.
-    Since d-k can be huge, we return the full-dim projection instead.
-    """
-    # P_orth = I - V_k @ V_k^T
-    H_in = H @ V_k @ V_k.T  # [n, d]
-    H_orth = H - H_in  # [n, d]
-    return H_orth
 
 
 def random_subspace(hidden_dim, k, seed=42):
@@ -295,6 +279,11 @@ def run_probes(features_dict, targets, target_type="binary", n_folds=5, seed=42)
             kf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
             accs, aucs = [], []
             y = targets.astype(int)
+
+            # Check if we have both classes
+            if len(np.unique(y)) < 2:
+                results[name] = {"error": "single class", "dim": int(X.shape[1])}
+                continue
 
             for train_idx, test_idx in kf.split(X, y):
                 X_train = scaler.fit_transform(X[train_idx])
@@ -352,22 +341,22 @@ def run_probes(features_dict, targets, target_type="binary", n_folds=5, seed=42)
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Phase 1c: Per-objective Probing")
+    parser = argparse.ArgumentParser(description="Phase 1c: Principal Direction Activation Shift Probing")
     parser.add_argument("--rl_dir", default="/root/autodl-tmp/models/MEM1")
     parser.add_argument("--base_dir", default="/root/autodl-tmp/models/Qwen2.5-7B")
     parser.add_argument("--output_path", default="/root/autodl-tmp/learned_traj_compress/artifacts/exp_004_probe_results.json")
     parser.add_argument("--cache_dir", default="/root/autodl-tmp/.hf_cache")
-    parser.add_argument("--subspace_k", type=int, default=256)
     parser.add_argument("--samples_per_n", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dry_run", action="store_true",
-                        help="Use 10 samples per N and 2 layers only")
+                        help="Use 10 samples per N, 3 N values, 3 layers")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
 
     N_VALUES = [1, 2, 4, 8, 12, 16]
-    # Layer selection: every 4th layer + last
     LAYER_INDICES = [0, 3, 7, 11, 15, 19, 23, 27]
+    K_VALUES = [64, 256]  # Match exp_003b k-sensitivity findings
+    N_RANDOM_SEEDS = 5
 
     if args.dry_run:
         args.samples_per_n = 10
@@ -375,10 +364,10 @@ def main():
         LAYER_INDICES = [0, 15, 27]
         print("*** DRY RUN: 10 samples/N, N=[1,4,8], layers=[0,15,27] ***")
 
-    print(f"=== Phase 1c: Per-objective Probing ===")
+    print(f"=== Phase 1c: Principal Direction Activation Shift Probing ===")
     print(f"RL model: {args.rl_dir}")
     print(f"Base model: {args.base_dir}")
-    print(f"Subspace k: {args.subspace_k}")
+    print(f"Subspace k values: {K_VALUES}")
     print(f"N values: {N_VALUES}")
     print(f"Layers: {LAYER_INDICES}")
     print(f"Samples per N: {args.samples_per_n}")
@@ -386,12 +375,11 @@ def main():
 
     t0 = time.time()
 
-    # --- Load data (same as Phase 1a) ---
+    # --- Load data ---
     print("[1/6] Loading QA data...")
     pool = load_qa_pool(args.cache_dir, args.seed)
 
-    # Build all samples and prompts
-    all_samples = []  # list of (n_objectives, sample_items)
+    all_samples = []
     for n in N_VALUES:
         samples = build_samples(pool, n, args.samples_per_n, args.seed)
         for sample in samples:
@@ -404,7 +392,6 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Build prompts
     prompts = []
     for n, sample in all_samples:
         prompt = build_prompt(sample, tokenizer)
@@ -421,9 +408,9 @@ def main():
     del base_model
     gc.collect()
     torch.cuda.empty_cache()
-    print(f"  Collected hidden states: {', '.join(f'L{l}: {v.shape}' for l, v in hs_base.items())}")
+    print(f"  Collected: {', '.join(f'L{l}: {v.shape}' for l, v in hs_base.items())}")
 
-    # --- Collect RL model hidden states + run inference for labels ---
+    # --- Collect RL model hidden states + inference for labels ---
     print("[4/6] Collecting RL model hidden states + running inference...")
     rl_model = AutoModelForCausalLM.from_pretrained(
         args.rl_dir, torch_dtype=torch.float16, device_map=args.device,
@@ -432,9 +419,9 @@ def main():
     hs_rl = collect_hidden_states(rl_model, tokenizer, prompts, LAYER_INDICES,
                                   device=args.device)
 
-    # Run inference to get per-objective EM labels
+    # Run inference for EM labels
     print("  Running RL inference for EM labels...")
-    sample_labels = []  # list of {"n": int, "mean_em": float, "per_obj_em": list[int]}
+    sample_labels = []
     for idx, (n, sample) in enumerate(tqdm(all_samples, desc="RL inference")):
         prompt = prompts[idx]
         inputs = tokenizer(prompt, return_tensors="pt").to(args.device)
@@ -446,7 +433,6 @@ def main():
         generated = tokenizer.decode(output_ids[0][inputs["input_ids"].shape[1]:],
                                      skip_special_tokens=True)
 
-        # Extract answers
         raw_answer = extract_answer(generated)
         per_obj_em = []
         if raw_answer is not None:
@@ -472,24 +458,21 @@ def main():
     torch.cuda.empty_cache()
     print(f"  Collected RL hidden states + labels for {len(sample_labels)} samples")
 
-    # --- Compute subspaces and run probes ---
-    print("[5/6] Computing subspaces and running probes...")
+    # --- Compute Δh and run probes ---
+    print("[5/6] Computing activation deltas and running probes...")
 
-    # Prepare targets
     mean_ems = np.array([s["mean_em"] for s in sample_labels])
     binary_labels = (mean_ems > 0.5).astype(int)
     n_values_arr = np.array([s["n"] for s in sample_labels])
-
-    # Also create per-N binary: "any collapse?" (mean_em < 1.0 for N=1, etc.)
-    # More useful: binary = majority correct
-    print(f"  Label stats: mean_em={mean_ems.mean():.3f}, binary_pos_rate={binary_labels.mean():.3f}")
-
-    k = args.subspace_k
     hidden_dim = list(hs_base.values())[0].shape[1]
-    print(f"  Hidden dim: {hidden_dim}, subspace k: {k}")
 
-    # Random subspaces (5 seeds)
-    random_Vs = [random_subspace(hidden_dim, k, seed=args.seed + s) for s in range(5)]
+    print(f"  Label stats: mean_em={mean_ems.mean():.3f}, binary_pos_rate={binary_labels.mean():.3f}")
+    print(f"  Hidden dim: {hidden_dim}")
+
+    # Pre-generate random subspaces for each k
+    random_Vs = {}
+    for k in K_VALUES:
+        random_Vs[k] = [random_subspace(hidden_dim, k, seed=args.seed + s) for s in range(N_RANDOM_SEEDS)]
 
     layer_results = {}
 
@@ -497,115 +480,147 @@ def main():
         print(f"\n  --- Layer {l} ---")
         H_base = hs_base[l]  # [n_samples, hidden_dim]
         H_rl = hs_rl[l]
+        delta_H = H_rl - H_base  # [n_samples, hidden_dim]
 
-        # Compute base activation principal subspace
-        V_base, base_var_explained = compute_activation_subspace(H_base, k)
-        print(f"  Base subspace: top-{k} explains {base_var_explained:.1%} of variance")
+        # Δh magnitude statistics
+        delta_norms = np.linalg.norm(delta_H, axis=1)
+        base_norms = np.linalg.norm(H_base, axis=1)
+        relative_delta = delta_norms / (base_norms + 1e-12)
+        print(f"  Δh norm: mean={delta_norms.mean():.2f}, relative={relative_delta.mean():.4f}")
 
-        # Compute ΔH principal subspace (difference between RL and base activations)
-        delta_H = H_rl - H_base
-        V_delta, delta_var_explained = compute_activation_subspace(delta_H, k)
-        print(f"  ΔH subspace: top-{k} explains {delta_var_explained:.1%} of variance")
+        k_results = {}
 
-        # Project RL hidden states
-        features = {
-            "full": H_rl,
-            "base_subspace": project_to_subspace(H_rl, V_base),
-            "orthogonal": project_to_orthogonal(H_rl, V_base),
-            "delta_subspace": project_to_subspace(H_rl, V_delta),
-        }
-        # Random subspace (averaged over 5 seeds)
-        for rs_idx, V_rand in enumerate(random_Vs):
-            features[f"random_{rs_idx}"] = project_to_subspace(H_rl, V_rand)
+        for k in K_VALUES:
+            print(f"    k={k}:")
 
-        # Run probes: binary classification (mean_em > 0.5)
-        print(f"  Running binary probes...")
-        binary_results = run_probes(features, binary_labels, target_type="binary",
-                                    seed=args.seed)
+            # Compute base activation principal subspace
+            V_base_k, base_var_explained, S_base = compute_activation_subspace(H_base, k)
+            print(f"      Base subspace: top-{k} explains {base_var_explained:.1%} of variance")
 
-        # Run probes: regression (mean_em)
-        print(f"  Running regression probes...")
-        reg_results = run_probes(features, mean_ems, target_type="regression",
-                                 seed=args.seed)
+            # Feature sets for probing:
+            features = {
+                # Upper bound: full RL hidden states
+                "h_rl_full": H_rl,
+                # Full activation delta
+                "delta_h_full": delta_H,
+                # Δh projected to base principal subspace (key test)
+                f"delta_h_principal_k{k}": project_to_subspace(delta_H, V_base_k),
+                # RL hidden states projected to base principal subspace
+                f"h_rl_principal_k{k}": project_to_subspace(H_rl, V_base_k),
+                # Base hidden states projected to own principal subspace (control)
+                f"h_base_principal_k{k}": project_to_subspace(H_base, V_base_k),
+            }
 
-        # Aggregate random results
-        for probe_type, results_dict in [("binary", binary_results), ("regression", reg_results)]:
-            random_metrics = []
-            for rs_idx in range(5):
-                key = f"random_{rs_idx}"
-                if key in results_dict and "error" not in results_dict[key]:
-                    random_metrics.append(results_dict[key])
-            if random_metrics:
-                avg_random = {}
-                for metric_key in random_metrics[0]:
-                    if metric_key == "dim":
-                        avg_random[metric_key] = random_metrics[0][metric_key]
-                    elif random_metrics[0][metric_key] is not None:
-                        vals = [m[metric_key] for m in random_metrics if m[metric_key] is not None]
-                        avg_random[metric_key] = float(np.mean(vals))
-                results_dict["random_avg"] = avg_random
-            # Clean up individual random entries
-            for rs_idx in range(5):
-                results_dict.pop(f"random_{rs_idx}", None)
+            # Random subspace baselines (Δh projected to random directions)
+            for rs_idx, V_rand in enumerate(random_Vs[k]):
+                features[f"delta_h_random_{rs_idx}"] = project_to_subspace(delta_H, V_rand)
+
+            # Compute projection energy: how much of Δh is in the principal subspace?
+            delta_h_in_principal = project_to_subspace(delta_H, V_base_k)  # [n, k]
+            delta_h_reconstructed = delta_h_in_principal @ V_base_k.T  # [n, d]
+            energy_in = np.sum(delta_h_reconstructed ** 2) / (np.sum(delta_H ** 2) + 1e-12)
+
+            # Binary probes
+            print(f"      Running binary probes...")
+            binary_results = run_probes(features, binary_labels, target_type="binary",
+                                        seed=args.seed)
+
+            # Regression probes
+            print(f"      Running regression probes...")
+            reg_results = run_probes(features, mean_ems, target_type="regression",
+                                     seed=args.seed)
+
+            # Aggregate random results
+            for probe_type, results_dict in [("binary", binary_results), ("regression", reg_results)]:
+                random_metrics = []
+                for rs_idx in range(N_RANDOM_SEEDS):
+                    key = f"delta_h_random_{rs_idx}"
+                    if key in results_dict and "error" not in results_dict[key]:
+                        random_metrics.append(results_dict[key])
+                if random_metrics:
+                    avg_random = {}
+                    for metric_key in random_metrics[0]:
+                        if metric_key == "dim":
+                            avg_random[metric_key] = random_metrics[0][metric_key]
+                        elif random_metrics[0][metric_key] is not None:
+                            vals = [m[metric_key] for m in random_metrics if m[metric_key] is not None]
+                            avg_random[metric_key] = float(np.mean(vals))
+                    results_dict["delta_h_random_avg"] = avg_random
+                for rs_idx in range(N_RANDOM_SEEDS):
+                    results_dict.pop(f"delta_h_random_{rs_idx}", None)
+
+            k_results[str(k)] = {
+                "base_var_explained": float(base_var_explained),
+                "delta_h_energy_in_principal": float(energy_in),
+                "binary_probes": binary_results,
+                "regression_probes": reg_results,
+            }
+
+            # Print summary
+            for ptype, res in [("binary", binary_results), ("regression", reg_results)]:
+                print(f"      [{ptype}]")
+                for name in ["h_rl_full", "delta_h_full",
+                             f"delta_h_principal_k{k}", f"h_rl_principal_k{k}",
+                             f"h_base_principal_k{k}", "delta_h_random_avg"]:
+                    if name in res and "error" not in res[name]:
+                        if ptype == "binary":
+                            acc = res[name]['accuracy_mean']
+                            auc_str = f" auc={res[name]['auc_mean']:.3f}" if res[name].get('auc_mean') else ""
+                            print(f"        {name:>30s}: acc={acc:.3f}±{res[name]['accuracy_std']:.3f}{auc_str}")
+                        else:
+                            r2 = res[name].get('r2_mean')
+                            corr = res[name].get('corr_mean')
+                            if r2 is not None:
+                                print(f"        {name:>30s}: R²={r2:.3f}" + (f" corr={corr:.3f}" if corr else ""))
+                            else:
+                                print(f"        {name:>30s}: N/A")
 
         layer_results[str(l)] = {
-            "base_var_explained": float(base_var_explained),
-            "delta_var_explained": float(delta_var_explained),
-            "binary_probes": binary_results,
-            "regression_probes": reg_results,
+            "delta_h_norm_mean": float(delta_norms.mean()),
+            "delta_h_relative_mean": float(relative_delta.mean()),
+            "k_analysis": k_results,
         }
-
-        # Print summary
-        for ptype, res in [("binary", binary_results), ("regression", reg_results)]:
-            print(f"  [{ptype}]")
-            for name in ["full", "base_subspace", "orthogonal", "delta_subspace", "random_avg"]:
-                if name in res and "error" not in res[name]:
-                    if ptype == "binary":
-                        print(f"    {name:>20s}: acc={res[name]['accuracy_mean']:.3f}±{res[name]['accuracy_std']:.3f}"
-                              + (f" auc={res[name]['auc_mean']:.3f}" if res[name].get('auc_mean') else ""))
-                    else:
-                        r2 = res[name].get('r2_mean')
-                        corr = res[name].get('corr_mean')
-                        print(f"    {name:>20s}: R²={r2:.3f}" + (f" corr={corr:.3f}" if corr else "")
-                              if r2 is not None else f"    {name:>20s}: N/A")
 
     # --- Compile output ---
     print("\n[6/6] Compiling results...")
     elapsed = time.time() - t0
 
-    # Go/no-go: compare orthogonal vs base subspace probe accuracy
-    orth_wins = 0
+    # Go/no-go: principal Δh probe > random Δh probe in majority of comparisons
+    principal_wins = 0
     total_comparisons = 0
-    for l_str, l_res in layer_results.items():
-        for ptype in ["binary_probes", "regression_probes"]:
-            probes = l_res[ptype]
-            orth = probes.get("orthogonal", {})
-            base = probes.get("base_subspace", {})
-            rand = probes.get("random_avg", {})
-            if ptype == "binary_probes":
-                orth_val = orth.get("accuracy_mean")
-                base_val = base.get("accuracy_mean")
-                rand_val = rand.get("accuracy_mean")
-            else:
-                orth_val = orth.get("r2_mean")
-                base_val = base.get("r2_mean")
-                rand_val = rand.get("r2_mean")
-            if orth_val is not None and base_val is not None:
-                total_comparisons += 1
-                if orth_val > base_val:
-                    orth_wins += 1
 
-    orth_advantage = orth_wins / total_comparisons if total_comparisons > 0 else 0
+    for l_str, l_res in layer_results.items():
+        for k_str, k_res in l_res["k_analysis"].items():
+            k = int(k_str)
+            for ptype in ["binary_probes", "regression_probes"]:
+                probes = k_res[ptype]
+                principal = probes.get(f"delta_h_principal_k{k}", {})
+                rand_avg = probes.get("delta_h_random_avg", {})
+
+                if ptype == "binary_probes":
+                    p_val = principal.get("accuracy_mean")
+                    r_val = rand_avg.get("accuracy_mean")
+                else:
+                    p_val = principal.get("r2_mean")
+                    r_val = rand_avg.get("r2_mean")
+
+                if p_val is not None and r_val is not None:
+                    total_comparisons += 1
+                    if p_val > r_val:
+                        principal_wins += 1
+
+    advantage_rate = principal_wins / total_comparisons if total_comparisons > 0 else 0
 
     output = {
         "config": {
             "rl_dir": args.rl_dir,
             "base_dir": args.base_dir,
-            "subspace_k": k,
+            "k_values": K_VALUES,
             "n_values": N_VALUES,
             "samples_per_n": args.samples_per_n,
             "layer_indices": LAYER_INDICES,
             "n_total_samples": len(all_samples),
+            "n_random_seeds": N_RANDOM_SEEDS,
             "elapsed_s": round(elapsed, 1),
             "dry_run": args.dry_run,
         },
@@ -616,10 +631,10 @@ def main():
         },
         "layer_results": layer_results,
         "go_no_go": {
-            "orthogonal_advantage": bool(orth_advantage > 0.5),
-            "orthogonal_advantage_rate": float(orth_advantage),
-            "detail": f"Orthogonal subspace outperforms base subspace in {orth_wins}/{total_comparisons} comparisons",
-            "overall": "GO" if orth_advantage > 0.6 else "PARTIAL" if orth_advantage > 0.4 else "NO-GO",
+            "principal_advantage": bool(advantage_rate > 0.5),
+            "principal_advantage_rate": float(advantage_rate),
+            "detail": f"Principal Δh probe outperforms random Δh probe in {principal_wins}/{total_comparisons} comparisons",
+            "overall": "GO" if advantage_rate > 0.6 else "PARTIAL" if advantage_rate > 0.4 else "NO-GO",
         },
         "sample_labels": sample_labels,
     }
@@ -633,32 +648,43 @@ def main():
 
     # --- Print summary ---
     print("\n" + "=" * 80)
-    print("SUMMARY")
+    print("SUMMARY — Phase 1c: Principal Direction Activation Shift Probing")
     print("=" * 80)
     print(f"\nLabel distribution: mean_em={mean_ems.mean():.3f}, binary_pos={binary_labels.mean():.1%}")
     for n in N_VALUES:
         mask = n_values_arr == n
         print(f"  N={n}: mean_em={mean_ems[mask].mean():.3f}, n={mask.sum()}")
 
-    print(f"\nProbe results by layer (binary accuracy):")
-    print(f"{'Layer':>6} {'Full':>8} {'Base':>8} {'Orth':>8} {'Delta':>8} {'Random':>8}")
-    for l in LAYER_INDICES:
-        bp = layer_results[str(l)]["binary_probes"]
-        vals = []
-        for name in ["full", "base_subspace", "orthogonal", "delta_subspace", "random_avg"]:
-            v = bp.get(name, {}).get("accuracy_mean")
-            vals.append(f"{v:.3f}" if v is not None else "N/A")
-        print(f"  L{l:>3}: {'  '.join(f'{v:>8}' for v in vals)}")
+    for k in K_VALUES:
+        print(f"\n--- k={k} ---")
+        print(f"{'Layer':>6} {'Δh_full':>10} {'Δh_princ':>10} {'Δh_random':>10} {'h_rl':>10} {'h_base':>10} {'Δh_energy':>10}")
+        for l in LAYER_INDICES:
+            l_res = layer_results[str(l)]
+            k_res = l_res["k_analysis"][str(k)]
+            bp = k_res["binary_probes"]
 
-    print(f"\nProbe results by layer (regression R²):")
-    print(f"{'Layer':>6} {'Full':>8} {'Base':>8} {'Orth':>8} {'Delta':>8} {'Random':>8}")
-    for l in LAYER_INDICES:
-        rp = layer_results[str(l)]["regression_probes"]
-        vals = []
-        for name in ["full", "base_subspace", "orthogonal", "delta_subspace", "random_avg"]:
-            v = rp.get(name, {}).get("r2_mean")
-            vals.append(f"{v:.3f}" if v is not None else "N/A")
-        print(f"  L{l:>3}: {'  '.join(f'{v:>8}' for v in vals)}")
+            vals = []
+            for name in ["delta_h_full", f"delta_h_principal_k{k}", "delta_h_random_avg",
+                         f"h_rl_principal_k{k}", f"h_base_principal_k{k}"]:
+                v = bp.get(name, {}).get("accuracy_mean")
+                vals.append(f"{v:.3f}" if v is not None else "N/A")
+            vals.append(f"{k_res['delta_h_energy_in_principal']:.3f}")
+
+            print(f"  L{l:>3}: {'  '.join(f'{v:>10}' for v in vals)}")
+
+        print(f"\nRegression R²:")
+        print(f"{'Layer':>6} {'Δh_full':>10} {'Δh_princ':>10} {'Δh_random':>10} {'h_rl':>10} {'h_base':>10}")
+        for l in LAYER_INDICES:
+            l_res = layer_results[str(l)]
+            k_res = l_res["k_analysis"][str(k)]
+            rp = k_res["regression_probes"]
+
+            vals = []
+            for name in ["delta_h_full", f"delta_h_principal_k{k}", "delta_h_random_avg",
+                         f"h_rl_principal_k{k}", f"h_base_principal_k{k}"]:
+                v = rp.get(name, {}).get("r2_mean")
+                vals.append(f"{v:.3f}" if v is not None else "N/A")
+            print(f"  L{l:>3}: {'  '.join(f'{v:>10}' for v in vals)}")
 
     print(f"\nGo/No-Go: {output['go_no_go']['overall']}")
     print(f"  {output['go_no_go']['detail']}")
