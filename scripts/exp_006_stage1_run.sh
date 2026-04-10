@@ -18,6 +18,8 @@
 #   BALANCED_SFT=1 bash scripts/exp_006_stage1_run.sh        # balanced SFT ablation
 #   FULL_DPO=1 bash scripts/exp_006_stage1_run.sh            # full-data DPO ablation
 #   SKIP_SFT=1 bash scripts/exp_006_stage1_run.sh            # skip SFT
+#   SKIP_N2=1 bash scripts/exp_006_stage1_run.sh             # skip DPO N=2
+#   SKIP_SFT=1 SKIP_N2=1 bash scripts/exp_006_stage1_run.sh # retrain N4/N8 only
 #   SKIP_TRAIN=1 bash scripts/exp_006_stage1_run.sh          # eval only
 set -euo pipefail
 
@@ -33,6 +35,13 @@ SPLIT_SEED="${SPLIT_SEED:-42}"
 BALANCED_SFT="${BALANCED_SFT:-0}"
 BALANCED_N2_TARGET="${BALANCED_N2_TARGET:-50}"
 FULL_DPO="${FULL_DPO:-0}"
+SKIP_N2="${SKIP_N2:-0}"
+
+# --- DPO hyperparams (D028: tuned for small-data ~110 train) ---
+DPO_EPOCHS="${DPO_EPOCHS:-1}"
+DPO_LR="${DPO_LR:-2e-5}"
+DPO_BETA="${DPO_BETA:-0.05}"
+DPO_MAX_GRAD_NORM="${DPO_MAX_GRAD_NORM:-1.0}"
 
 # Checkpoint dir names reflect ablation mode so main and ablation runs coexist
 if [ "$BALANCED_SFT" = "1" ]; then
@@ -59,6 +68,11 @@ echo "Eval output:  ${EVAL_DIR}"
 echo "Split seed:   ${SPLIT_SEED}"
 echo "Balanced SFT: ${BALANCED_SFT} (N=2 target=${BALANCED_N2_TARGET})"
 echo "Full DPO:     ${FULL_DPO}"
+echo "Skip N=2:     ${SKIP_N2}"
+echo "DPO epochs:   ${DPO_EPOCHS}"
+echo "DPO lr:       ${DPO_LR}"
+echo "DPO beta:     ${DPO_BETA}"
+echo "DPO grad_norm:${DPO_MAX_GRAD_NORM}"
 echo "SFT dir:      ${SFT_DIR}"
 echo ""
 
@@ -129,6 +143,12 @@ fi
 # Step 2: Per-N DPO Training (default: matched-sample, Warning 1 fix)
 # ============================================
 for N in 2 4 8; do
+    # Skip N=2 DPO when retrain-only mode (D028: N2 already done, only retrain N4/N8)
+    if [ "$N" = "2" ] && [ "$SKIP_N2" = "1" ]; then
+        echo "[SKIP] DPO N=2 skipped (SKIP_N2=1)"
+        continue
+    fi
+
     DPO_DIR="${CKPT_DIR}/exp_006_dpo_N${N}${DPO_SUFFIX}"
     DPO_DATA="${DATA_DIR}/dpo_data_N${N}.json"
 
@@ -144,14 +164,19 @@ for N in 2 4 8; do
     if [ "$FULL_DPO" = "1" ]; then
         DPO_EXTRA_ARGS+=(--full_data)
     fi
+    # D028: max_grad_norm only passed when set (avoids no-clip default)
+    if [ -n "$DPO_MAX_GRAD_NORM" ]; then
+        DPO_EXTRA_ARGS+=(--max_grad_norm "$DPO_MAX_GRAD_NORM")
+    fi
     python3 "${SCRIPT_DIR}/exp_006_stage1_dpo.py" \
         --model_path "$MODEL_PATH" \
         --sft_adapter "$SFT_DIR" \
         --data_dir "$DATA_DIR" \
         --n_objectives "$N" \
         --output_dir "$DPO_DIR" \
-        --num_epochs 2 \
-        --lr 5e-5 \
+        --num_epochs "$DPO_EPOCHS" \
+        --lr "$DPO_LR" \
+        --beta "$DPO_BETA" \
         --batch_size 1 \
         --grad_accum 8 \
         --split_seed "$SPLIT_SEED" \
