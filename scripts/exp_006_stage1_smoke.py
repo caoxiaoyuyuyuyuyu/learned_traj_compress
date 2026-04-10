@@ -140,7 +140,7 @@ def smoke_sft_init(data_dir: str, model_name: str = "Qwen/Qwen2.5-0.5B-Instruct"
         dataloader_pin_memory=False,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
-        no_cuda=True,
+        use_cpu=True,
     )
 
     collator = sft_mod.PerNDataCollator(tokenizer)
