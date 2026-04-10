@@ -172,6 +172,8 @@ def main():
     parser.add_argument("--subsample_seed", type=int, default=42,
                         help="Seed for random matched-sample subsampling "
                              "(decoupled from --seed so training rng can vary).")
+    parser.add_argument("--max_grad_norm", type=float, default=None,
+                        help="Gradient clipping max norm (e.g. 1.0). None = no clipping.")
     parser.add_argument("--skip_eval", action="store_true",
                         help="Disable eval during DPO training (saves GPU memory "
                              "for long sequences). Eval is done separately in Step 3.")
@@ -303,6 +305,7 @@ def main():
         bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
+        max_grad_norm=args.max_grad_norm if args.max_grad_norm is not None else 1e9,
         max_length=args.max_length,
         report_to="wandb",
         run_name=args.run_name,
@@ -321,6 +324,12 @@ def main():
         processing_class=tokenizer,
     )
     trainer.train()
+
+    # Persist trainer log_history for offline observability (D028: never rely on wandb state)
+    log_history_path = os.path.join(args.output_dir, "training_log.json")
+    with open(log_history_path, "w") as f:
+        json.dump(trainer.state.log_history, f, indent=2)
+    print(f"Saved training log history ({len(trainer.state.log_history)} entries) to {log_history_path}")
 
     # Save DPO adapter
     print(f"\nSaving DPO adapter to {args.output_dir}")
@@ -346,6 +355,7 @@ def main():
         "num_epochs": args.num_epochs,
         "lr": args.lr,
         "beta": args.beta,
+        "max_grad_norm": args.max_grad_norm,
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "elapsed_seconds": time.time() - t0,
