@@ -2,9 +2,10 @@
 """
 Phase 1d Data Generation: Generate trajectories from MEM1 RL teacher for SFT + DPO training.
 
-Generates 2 responses per prompt (T=0.7) at N=2,4,8.
+Generates 2 responses per prompt (both sampled, T=0.7, different seeds) at N=2,4,8.
 - SFT data: perfect EM trajectories
 - DPO data: (chosen, rejected) pairs where chosen_em > rejected_em
+- max_new_tokens scales with N: 512 (N≤2), 1024 (N≤4), 2048 (N≥5)
 
 Usage:
     python scripts/phase1d_generate_data.py \
@@ -151,9 +152,26 @@ def evaluate_response(response, sample):
 # Generation
 # ---------------------------------------------------------------------------
 
+def max_tokens_for_n(n):
+    """Dynamic max_new_tokens based on number of objectives."""
+    if n <= 2:
+        return 512
+    elif n <= 4:
+        return 1024
+    else:
+        return 2048
+
+
 def generate_paired_trajectories(model, tokenizer, pool, n_objectives, n_prompts, seed, device,
-                                  max_new_tokens=512):
-    """Generate 2 responses per prompt for DPO pair construction."""
+                                  max_new_tokens=None):
+    """Generate 2 responses per prompt for DPO pair construction.
+
+    Both responses use sampling (T=0.7, top_p=0.9) with different seeds
+    to avoid greedy/sampled bias in DPO pairs.
+    """
+    if max_new_tokens is None:
+        max_new_tokens = max_tokens_for_n(n_objectives)
+
     rng = random.Random(seed)
     needed = n_objectives * n_prompts
     if needed > len(pool):
@@ -169,17 +187,16 @@ def generate_paired_trajectories(model, tokenizer, pool, n_objectives, n_prompts
 
         responses = []
         for resp_idx in range(2):
+            # Use different but reproducible seed per (prompt, response) pair
+            resp_seed = seed + idx * 2 + resp_idx
+            torch.manual_seed(resp_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(resp_seed)
+
             with torch.no_grad():
-                if resp_idx == 0:
-                    # Greedy for response A
-                    output_ids = model.generate(
-                        **inputs, max_new_tokens=max_new_tokens,
-                        do_sample=False, temperature=None, top_p=None)
-                else:
-                    # Sampled for response B
-                    output_ids = model.generate(
-                        **inputs, max_new_tokens=max_new_tokens,
-                        do_sample=True, temperature=0.7, top_p=0.9)
+                output_ids = model.generate(
+                    **inputs, max_new_tokens=max_new_tokens,
+                    do_sample=True, temperature=0.7, top_p=0.9)
 
             response = tokenizer.decode(output_ids[0][inputs["input_ids"].shape[1]:],
                                         skip_special_tokens=True)
@@ -190,6 +207,7 @@ def generate_paired_trajectories(model, tokenizer, pool, n_objectives, n_prompts
                 "total_em": total_em,
                 "per_obj_em": per_obj_em,
                 "is_perfect": total_em == n_objectives,
+                "seed": resp_seed,
             })
 
         results.append({
@@ -285,7 +303,7 @@ def main():
         args.rl_dir, torch_dtype=torch.float16, device_map=args.device, trust_remote_code=True)
     model.eval()
 
-    # Generate for each N
+    # Generate for each N (with intermediate saves)
     all_results = []
     for n in args.n_values:
         # Use different seed offset per N to get different prompts
@@ -294,6 +312,25 @@ def main():
             seed=args.seed + n * 1000, device=args.device)
         all_results.extend(results)
         print(f"N={n}: {len(results)} prompt pairs generated")
+
+        # Save intermediate results after each N completes
+        interim_path = os.path.join(args.output_dir, f"raw_trajectories_N{n}.json")
+        sft_interim, dpo_interim = build_sft_and_dpo_data(results)
+        n_perfect = sum(1 for r in results for resp in r["responses"] if resp["is_perfect"])
+        interim_stats = {
+            "n_objectives": n,
+            "prompts": len(results),
+            "perfect_responses": n_perfect,
+            "sft_samples": len(sft_interim),
+            "dpo_pairs": len(dpo_interim),
+        }
+        with open(interim_path, "w") as f:
+            json.dump({"stats": interim_stats, "results": results}, f, indent=2, ensure_ascii=False)
+        with open(os.path.join(args.output_dir, f"sft_data_N{n}.json"), "w") as f:
+            json.dump(sft_interim, f, indent=2, ensure_ascii=False)
+        with open(os.path.join(args.output_dir, f"dpo_data_N{n}.json"), "w") as f:
+            json.dump(dpo_interim, f, indent=2, ensure_ascii=False)
+        print(f"  Intermediate save: {interim_path} ({interim_stats})")
 
     del model
     gc.collect()
