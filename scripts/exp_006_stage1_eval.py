@@ -101,17 +101,13 @@ def load_test_prompts(data_dir, split_seed=42):
 
     Returns dict: {N: [{user_content, gold_answers, questions, ...}, ...]}
     """
-    import hashlib
     import glob
 
-    def assign_split(prompt_text, seed=42, test_frac=0.15, val_frac=0.10):
-        h = hashlib.sha256(f"{seed}|{prompt_text[:500]}".encode()).hexdigest()
-        v = int(h[:8], 16) / 0xFFFFFFFF
-        if v < test_frac:
-            return "test"
-        elif v < test_frac + val_frac:
-            return "val"
-        return "train"
+    # Use canonical split (D024: full text hash + test_frac=0.25)
+    _scripts_dir = os.path.dirname(__file__)
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
+    from utils.split import assign_split  # noqa: E402
 
     test_prompts = {}
     pattern = os.path.join(data_dir, "raw_trajectories_N*.json")

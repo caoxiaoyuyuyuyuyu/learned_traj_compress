@@ -10,11 +10,11 @@ Split is deterministic (hash-based) so DPO script reproduces the same split.
 
 import argparse
 import glob
-import hashlib
 import json
 import os
 import random
 import re
+import sys
 import time
 
 import torch
@@ -27,8 +27,10 @@ from transformers import (
 )
 from trl import SFTConfig, SFTTrainer
 
+# Canonical split from shared module (D024: full text hash + test_frac=0.25)
+sys.path.insert(0, os.path.dirname(__file__))
+from utils.split import assign_split, split_data, verify_split_counts
 
-# ── Prompt-level split (shared with DPO script) ──────────────────────
 
 def get_prompt_text(item):
     """Extract prompt text for split hashing.
@@ -41,27 +43,6 @@ def get_prompt_text(item):
         f"got keys: {list(item.keys())[:5]}"
     )
     return item["user_content"]
-
-
-def assign_split(prompt_text, seed=42, test_frac=0.15, val_frac=0.10):
-    """Deterministic hash-based split. Same prompt always maps to same split."""
-    h = hashlib.sha256(f"{seed}|{prompt_text[:500]}".encode()).hexdigest()
-    v = int(h[:8], 16) / 0xFFFFFFFF
-    if v < test_frac:
-        return "test"
-    elif v < test_frac + val_frac:
-        return "val"
-    return "train"
-
-
-def split_data(data, seed=42):
-    """Split data list into train/val/test by prompt-level hashing."""
-    splits = {"train": [], "val": [], "test": []}
-    for item in data:
-        prompt_text = get_prompt_text(item)
-        s = assign_split(prompt_text, seed=seed)
-        splits[s].append(item)
-    return splits
 
 
 # ── Data loading ─────────────────────────────────────────────────────
@@ -294,11 +275,14 @@ def main():
         seed=args.seed,
     )
 
-    splits = split_data(raw_data, seed=args.split_seed)
+    splits = split_data(raw_data, prompt_key="user_content", seed=args.split_seed)
     print(f"\nPrompt-level split (seed={args.split_seed}):")
     print(f"  train: {len(splits['train'])} samples")
     print(f"  val:   {len(splits['val'])} samples")
     print(f"  test:  {len(splits['test'])} samples")
+
+    # D024 split integrity assertion: abort if counts don't match stats_d024.json
+    verify_split_counts(splits, args.data_dir, data_type="sft", n_value=None)
 
     # Save split info for DPO script and eval script
     split_info = {

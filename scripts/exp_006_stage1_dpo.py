@@ -8,11 +8,11 @@ as SFT (deterministic hash-based).
 """
 
 import argparse
-import hashlib
 import json
 import os
 import random
 import re
+import sys
 import time
 
 import torch
@@ -21,45 +21,22 @@ from peft import LoraConfig, PeftModel, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import DPOConfig, DPOTrainer
 
+# Canonical split from shared module (D024: full text hash + test_frac=0.25)
+sys.path.insert(0, os.path.dirname(__file__))
+from utils.split import assign_split, split_data, verify_split_counts
 
-# ── Prompt-level split (identical to SFT script) ─────────────────────
 
 def get_prompt_text(item):
     """Extract prompt text for split hashing.
 
     DPO data items have a `prompt` key whose value is the raw `user_content`
     text (see scripts/phase1d_generate_data.py:288 — `"prompt": item["user_content"]`).
-    Pinning to a single key removes the silent-fallback risk: any future schema
-    addition won't change which field drives the split. Cross-script split
-    consistency holds because SFT/eval also hash the same underlying text
-    (just stored under the `user_content` key in those schemas).
     """
     assert "prompt" in item, (
         f"missing 'prompt' key for DPO split hashing; "
         f"got keys: {list(item.keys())[:5]}"
     )
     return item["prompt"]
-
-
-def assign_split(prompt_text, seed=42, test_frac=0.15, val_frac=0.10):
-    """Deterministic hash-based split. Same prompt always maps to same split."""
-    h = hashlib.sha256(f"{seed}|{prompt_text[:500]}".encode()).hexdigest()
-    v = int(h[:8], 16) / 0xFFFFFFFF
-    if v < test_frac:
-        return "test"
-    elif v < test_frac + val_frac:
-        return "val"
-    return "train"
-
-
-def split_data(data, seed=42):
-    """Split data list into train/val/test by prompt-level hashing."""
-    splits = {"train": [], "val": [], "test": []}
-    for item in data:
-        prompt_text = get_prompt_text(item)
-        s = assign_split(prompt_text, seed=seed)
-        splits[s].append(item)
-    return splits
 
 
 # ── Data loading ─────────────────────────────────────────────────────
@@ -246,11 +223,16 @@ def main():
     else:
         print(f"[full] using all {len(raw_data)} pairs for N={args.n_objectives} (ablation, not main claim)")
 
-    splits = split_data(raw_data, seed=args.split_seed)
+    splits = split_data(raw_data, prompt_key="prompt", seed=args.split_seed)
     print(f"\nPrompt-level split (seed={args.split_seed}):")
     print(f"  train: {len(splits['train'])} pairs")
     print(f"  val:   {len(splits['val'])} pairs")
     print(f"  test:  {len(splits['test'])} pairs (held out)")
+
+    # D024 split integrity assertion: abort if counts don't match stats_d024.json
+    # Only verify when using full data (not matched-subsampled, which changes counts)
+    if args.full_data or matched_size_used is None or matched_size_used >= raw_count_original:
+        verify_split_counts(splits, args.data_dir, data_type="dpo", n_value=args.n_objectives)
 
     if len(splits["train"]) == 0:
         raise ValueError("No training data after split! Check data or split seed.")
