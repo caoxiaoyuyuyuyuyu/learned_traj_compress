@@ -123,7 +123,7 @@ def count_unique_prompts(items, prompt_key="user_content"):
     texts = set()
     for item in items:
         t = item.get(prompt_key) or item.get("prompt")
-        texts.add(t[:500])
+        texts.add(t)
     return len(texts)
 
 
@@ -175,10 +175,13 @@ def main():
         n_dpo_train = len(dpo_splits["train"])
         n_dpo_test = len(dpo_splits["test"])
 
-        # Count unique test prompts for N=8
-        n_test_prompts = count_unique_prompts(
-            sft_splits["test"] + dpo_splits["test"], "user_content"
-        ) if n == 8 else None
+        # Count unique test prompts at the raw level (before SFT/DPO filtering)
+        n_test_prompts = None
+        if n == 8:
+            n_test_prompts = sum(
+                1 for item in results
+                if assign_split(item["user_content"]) == "test"
+            )
 
         print(f"  SFT split: train={n_sft_train} val={len(sft_splits['val'])} test={n_sft_test}")
         print(f"  DPO split: train={n_dpo_train} val={len(dpo_splits['val'])} test={n_dpo_test}")
