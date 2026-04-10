@@ -376,7 +376,10 @@ def main():
         bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        max_seq_length=args.max_seq_length,
+        # NOTE: TRL >= 1.0 renamed `max_seq_length` -> `max_length`. We pre-tokenize
+        # in format_for_sft() with truncation already applied, so this is mostly
+        # belt-and-braces, but passing the wrong kwarg crashes SFTConfig.__init__.
+        max_length=args.max_seq_length,
         dataset_kwargs={"skip_prepare_dataset": True},
         remove_unused_columns=False,
         report_to="wandb",
