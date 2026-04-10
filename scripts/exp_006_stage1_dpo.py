@@ -172,6 +172,9 @@ def main():
     parser.add_argument("--subsample_seed", type=int, default=42,
                         help="Seed for random matched-sample subsampling "
                              "(decoupled from --seed so training rng can vary).")
+    parser.add_argument("--skip_eval", action="store_true",
+                        help="Disable eval during DPO training (saves GPU memory "
+                             "for long sequences). Eval is done separately in Step 3.")
     args = parser.parse_args()
 
     # Auto-suffix output_dir / run_name for full-data ablation
@@ -293,8 +296,8 @@ def main():
         beta=args.beta,
         warmup_steps=warmup_steps,
         logging_steps=5,
-        eval_strategy="steps" if val_dataset is not None else "no",
-        eval_steps=20 if val_dataset is not None else None,
+        eval_strategy="steps" if (val_dataset is not None and not args.skip_eval) else "no",
+        eval_steps=20 if (val_dataset is not None and not args.skip_eval) else None,
         save_strategy="epoch",
         save_total_limit=2,
         bf16=True,
