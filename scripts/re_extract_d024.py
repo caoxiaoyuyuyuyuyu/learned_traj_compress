@@ -27,8 +27,13 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 def assign_split(prompt_text, seed=42, test_frac=0.25, val_frac=0.10):
-    """Deterministic hash-based split. Same prompt always maps to same split."""
-    h = hashlib.sha256(f"{seed}|{prompt_text[:500]}".encode()).hexdigest()
+    """Deterministic hash-based split. Same prompt always maps to same split.
+
+    Note: uses full prompt text (not [:500]) because the MEM1 prompt template
+    is >500 chars of shared prefix before the per-prompt questions appear.
+    Truncating at 500 would hash all items identically.
+    """
+    h = hashlib.sha256(f"{seed}|{prompt_text}".encode()).hexdigest()
     v = int(h[:8], 16) / 0xFFFFFFFF
     if v < test_frac:
         return "test"
