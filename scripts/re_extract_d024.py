@@ -16,30 +16,15 @@ Usage:
         --data_dir /root/autodl-tmp/learned_traj_compress/artifacts/phase1d_v2_data
 """
 import argparse
-import hashlib
 import json
+import os
 import shutil
+import sys
 from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# Hash-based split (canonical implementation, test_frac=0.25)
-# ---------------------------------------------------------------------------
-
-def assign_split(prompt_text, seed=42, test_frac=0.25, val_frac=0.10):
-    """Deterministic hash-based split. Same prompt always maps to same split.
-
-    Note: uses full prompt text (not [:500]) because the MEM1 prompt template
-    is >500 chars of shared prefix before the per-prompt questions appear.
-    Truncating at 500 would hash all items identically.
-    """
-    h = hashlib.sha256(f"{seed}|{prompt_text}".encode()).hexdigest()
-    v = int(h[:8], 16) / 0xFFFFFFFF
-    if v < test_frac:
-        return "test"
-    elif v < test_frac + val_frac:
-        return "val"
-    return "train"
+# Use canonical split from shared module
+sys.path.insert(0, os.path.dirname(__file__))
+from utils.split import assign_split
 
 
 def get_prompt_text(item):
@@ -234,7 +219,7 @@ def main():
     stats["matched_size_dpo"] = min(all_dpo_train_counts) if all_dpo_train_counts else 0
     if "8" in stats["per_n"]:
         stats["n8_test_prompts"] = stats["per_n"]["8"].get("n_test_prompts_unique", "?")
-    stats["d024_re_extract_commit"] = "TBD"
+    stats["d024_re_extract_commit"] = "ac120fa"
 
     print(f"\n{'='*60}")
     print(f"matched_size_sft (min train): {stats['matched_size_sft']}")
