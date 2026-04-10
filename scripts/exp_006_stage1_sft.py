@@ -339,7 +339,7 @@ def main():
     # ── Load model ──
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
     )
@@ -358,6 +358,15 @@ def main():
     # NOTE: dataset_kwargs={'skip_prepare_dataset': True} + remove_unused_columns=False
     # keeps the `n_value` column alive through the Trainer's data pipeline so the
     # custom PerNLossSFTTrainer can log per-N train losses (Warning 2 diagnostic).
+    # Compute warmup_steps from ratio (TRL 1.0 deprecated warmup_ratio)
+    world_size = max(int(os.environ.get("WORLD_SIZE", 1)), 1)
+    total_train_steps = int(
+        args.num_epochs * len(train_dataset)
+        / (args.batch_size * args.grad_accum * world_size)
+    )
+    warmup_steps = max(int(total_train_steps * 0.1), 1)
+    print(f"[sft] total_train_steps={total_train_steps}, warmup_steps={warmup_steps}")
+
     training_args = SFTConfig(
         output_dir=args.output_dir,
         num_train_epochs=args.num_epochs,
@@ -366,7 +375,7 @@ def main():
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         weight_decay=0.01,
-        warmup_ratio=0.1,
+        warmup_steps=warmup_steps,
         logging_steps=5,
         eval_strategy="steps",
         eval_steps=20,

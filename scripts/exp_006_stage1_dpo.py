@@ -146,7 +146,7 @@ def load_sft_merged_model(model_path, sft_adapter):
     print(f"Loading base model: {model_path}")
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
     )
@@ -175,7 +175,6 @@ def main():
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--grad_accum", type=int, default=8)
     parser.add_argument("--max_length", type=int, default=4096)
-    parser.add_argument("--max_prompt_length", type=int, default=2048)
     parser.add_argument("--beta", type=float, default=0.1)
     parser.add_argument("--lora_rank", type=int, default=32)
     parser.add_argument("--lora_alpha", type=int, default=64)
@@ -293,6 +292,15 @@ def main():
     )
 
     # ── DPO training config ──
+    # Compute warmup_steps from ratio (TRL 1.0 deprecated warmup_ratio)
+    world_size = max(int(os.environ.get("WORLD_SIZE", 1)), 1)
+    total_train_steps = int(
+        args.num_epochs * len(train_dataset)
+        / (args.batch_size * args.grad_accum * world_size)
+    )
+    warmup_steps = max(int(total_train_steps * 0.1), 1)
+    print(f"[dpo] total_train_steps={total_train_steps}, warmup_steps={warmup_steps}")
+
     dpo_config = DPOConfig(
         output_dir=args.output_dir,
         num_train_epochs=args.num_epochs,
@@ -301,7 +309,7 @@ def main():
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         beta=args.beta,
-        warmup_ratio=0.1,
+        warmup_steps=warmup_steps,
         logging_steps=5,
         eval_strategy="steps" if val_dataset is not None else "no",
         eval_steps=20 if val_dataset is not None else None,
@@ -311,7 +319,6 @@ def main():
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         max_length=args.max_length,
-        max_prompt_length=args.max_prompt_length,
         report_to="wandb",
         run_name=args.run_name,
         seed=args.seed,
