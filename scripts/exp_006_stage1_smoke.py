@@ -271,6 +271,119 @@ def smoke_eval_em():
     print("[smoke2] PASS")
 
 
+# ── Smoke 3: DPO init ───────────────────────────────────────────────
+
+def smoke_dpo_init(model_name: str = "Qwen/Qwen2.5-0.5B-Instruct"):
+    """Verify DPOConfig + DPOTrainer instantiate and run 5 steps on CPU.
+
+    Uses 8 synthetic DPO pairs (RAG-style prompts) with LoRA r=8.
+    On 0.5B, loss ≈ log(2) ≈ 0.693 is expected (model can't distinguish
+    chosen/rejected in 5 steps).  We just check it runs without error.
+    """
+    print("=" * 60)
+    print("SMOKE 3 — DPO init (DPOConfig + DPOTrainer + 5 steps)")
+    print("=" * 60)
+
+    import torch
+    from datasets import Dataset
+    from peft import LoraConfig, TaskType
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from trl import DPOConfig, DPOTrainer
+
+    # --- Synthetic DPO data (8 pairs, RAG-style prompts) ---
+    synthetic_pairs = []
+    for i in range(8):
+        synthetic_pairs.append({
+            "prompt": (
+                f"You will answer complex questions using search.\n"
+                f"Answer the following questions: question_{i}_a; question_{i}_b\n"
+                f"<information>\nDoc 1(Title: Topic {i}) Some relevant passage about topic {i}.\n</information>"
+            ),
+            "chosen": (
+                f"<think>Based on the information, I can answer both questions.</think>"
+                f"<answer>correct_answer_{i}_a; correct_answer_{i}_b</answer>"
+            ),
+            "rejected": (
+                f"<think>I'm not sure about these questions.</think>"
+                f"<answer>wrong_answer_{i}_a; wrong_answer_{i}_b</answer>"
+            ),
+        })
+
+    dpo_ds = Dataset.from_list(synthetic_pairs)
+    print(f"[smoke3] synthetic DPO dataset: {len(dpo_ds)} pairs")
+
+    print(f"[smoke3] loading tiny model on CPU: {model_name}")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float32,  # CPU → fp32
+    )
+    model.to("cpu")
+
+    lora_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        r=8,
+        lora_alpha=16,
+        lora_dropout=0.0,
+        target_modules=["q_proj", "v_proj"],
+    )
+
+    out_dir = tempfile.mkdtemp(prefix="exp006_smoke_dpo_")
+    print(f"[smoke3] output_dir = {out_dir}")
+
+    # Detect bf16 support (CPU usually doesn't have it)
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
+    dpo_config = DPOConfig(
+        output_dir=out_dir,
+        num_train_epochs=1,
+        max_steps=5,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=1,
+        learning_rate=5e-5,
+        logging_steps=1,
+        save_strategy="no",
+        bf16=use_bf16,
+        fp16=False,
+        gradient_checkpointing=False,
+        report_to=[],
+        run_name="exp_006_dpo_smoke",
+        seed=42,
+        dataloader_pin_memory=False,
+        use_cpu=not torch.cuda.is_available(),
+        remove_unused_columns=False,
+        max_length=512,
+    )
+    print("[smoke3] DPOConfig instantiated OK")
+
+    print("[smoke3] instantiating DPOTrainer...")
+    trainer = DPOTrainer(
+        model=model,
+        args=dpo_config,
+        train_dataset=dpo_ds,
+        peft_config=lora_config,
+        processing_class=tokenizer,
+    )
+    print("[smoke3] DPOTrainer instantiated OK")
+
+    print("[smoke3] starting trainer.train() (5 steps)...")
+    trainer.train()
+    print("[smoke3] trainer.train() returned OK")
+
+    # Check log history
+    log_hist = trainer.state.log_history
+    print(f"[smoke3] log_history length = {len(log_hist)}")
+    for entry in log_hist[-5:]:
+        print(f"    {entry}")
+
+    has_loss = any("loss" in e for e in log_hist)
+    assert has_loss, "expected loss entries in log history"
+    print("[smoke3] PASS")
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -283,25 +396,43 @@ def main():
     parser.add_argument(
         "--model_name",
         default="Qwen/Qwen2.5-0.5B-Instruct",
-        help="Tiny model for smoke 1 (CPU)",
+        help="Tiny model for smoke tests (CPU)",
     )
+    parser.add_argument(
+        "--part",
+        choices=["all", "sft", "eval", "dpo"],
+        default="all",
+        help="Which smoke to run: all, sft, eval, or dpo",
+    )
+    # Legacy flags (kept for backwards compat)
     parser.add_argument("--skip_sft", action="store_true",
-                        help="Skip smoke 1 (e.g. if HF download blocked)")
+                        help="Skip SFT smoke (e.g. if HF download blocked)")
     parser.add_argument("--skip_eval", action="store_true")
     args = parser.parse_args()
 
+    # Determine which smokes to run
+    run_eval = (args.part in ("all", "eval")) and not args.skip_eval
+    run_sft = (args.part in ("all", "sft")) and not args.skip_sft
+    run_dpo = args.part in ("all", "dpo")
+
     failures = []
-    if not args.skip_eval:
+    if run_eval:
         try:
             smoke_eval_em()
         except Exception:
             failures.append("smoke_eval_em")
             traceback.print_exc()
-    if not args.skip_sft:
+    if run_sft:
         try:
             smoke_sft_init(args.data_dir, args.model_name)
         except Exception:
             failures.append("smoke_sft_init")
+            traceback.print_exc()
+    if run_dpo:
+        try:
+            smoke_dpo_init(args.model_name)
+        except Exception:
+            failures.append("smoke_dpo_init")
             traceback.print_exc()
 
     print()
@@ -309,7 +440,8 @@ def main():
     if failures:
         print(f"SMOKE FAILED: {failures}")
         sys.exit(1)
-    print("ALL SMOKES PASSED")
+    parts_run = [x for x, r in [("eval", run_eval), ("sft", run_sft), ("dpo", run_dpo)] if r]
+    print(f"ALL SMOKES PASSED ({', '.join(parts_run)})")
     print("=" * 60)
 
 
