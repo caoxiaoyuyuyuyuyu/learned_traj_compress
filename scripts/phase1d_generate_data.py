@@ -163,11 +163,15 @@ def max_tokens_for_n(n):
 
 
 def generate_paired_trajectories(model, tokenizer, pool, n_objectives, n_prompts, seed, device,
-                                  max_new_tokens=None):
+                                  max_new_tokens=None, checkpoint_dir=None,
+                                  checkpoint_every=100):
     """Generate 2 responses per prompt for DPO pair construction.
 
     Both responses use sampling (T=0.7, top_p=0.9) with different seeds
     to avoid greedy/sampled bias in DPO pairs.
+
+    If checkpoint_dir is set, saves progress every checkpoint_every prompts
+    and resumes from the last checkpoint on restart.
     """
     if max_new_tokens is None:
         max_new_tokens = max_tokens_for_n(n_objectives)
@@ -180,8 +184,21 @@ def generate_paired_trajectories(model, tokenizer, pool, n_objectives, n_prompts
         items = rng.sample(pool, needed)
     samples = [items[i * n_objectives:(i + 1) * n_objectives] for i in range(n_prompts)]
 
+    # Resume from checkpoint if available
     results = []
-    for idx, sample in enumerate(tqdm(samples, desc=f"N={n_objectives}")):
+    start_idx = 0
+    if checkpoint_dir:
+        ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_N{n_objectives}.json")
+        if os.path.exists(ckpt_path):
+            with open(ckpt_path) as f:
+                ckpt = json.load(f)
+            results = ckpt["results"]
+            start_idx = len(results)
+            print(f"  Resuming N={n_objectives} from checkpoint: {start_idx}/{n_prompts}")
+
+    for idx in tqdm(range(start_idx, n_prompts), desc=f"N={n_objectives}",
+                    initial=start_idx, total=n_prompts):
+        sample = samples[idx]
         prompt, user_content, assistant_prefix = build_prompt_and_info(sample, tokenizer)
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
@@ -219,6 +236,21 @@ def generate_paired_trajectories(model, tokenizer, pool, n_objectives, n_prompts
             "gold_answers": [item["answers"] for item in sample],
             "responses": responses,
         })
+
+        # Intra-N checkpoint
+        if checkpoint_dir and (idx + 1) % checkpoint_every == 0:
+            ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_N{n_objectives}.json")
+            with open(ckpt_path, "w") as f:
+                json.dump({"n_objectives": n_objectives, "completed": idx + 1,
+                           "total": n_prompts, "results": results},
+                          f, ensure_ascii=False)
+            print(f"  Checkpoint saved: {idx + 1}/{n_prompts}")
+
+    # Clean up checkpoint after N completes
+    if checkpoint_dir:
+        ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_N{n_objectives}.json")
+        if os.path.exists(ckpt_path):
+            os.remove(ckpt_path)
 
     return results
 
@@ -279,6 +311,10 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dry_run", action="store_true")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume: skip completed N values, resume in-progress N from checkpoint")
+    parser.add_argument("--checkpoint_every", type=int, default=100,
+                        help="Save checkpoint every N prompts within each N value")
     args = parser.parse_args()
 
     if args.dry_run:
@@ -303,13 +339,29 @@ def main():
         args.rl_dir, torch_dtype=torch.float16, device_map=args.device, trust_remote_code=True)
     model.eval()
 
+    # Checkpoint directory for intra-N saves
+    checkpoint_dir = os.path.join(args.output_dir, ".checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
     # Generate for each N (with intermediate saves)
     all_results = []
     for n in args.n_values:
+        # Resume mode: skip N values that already have final output
+        final_path = os.path.join(args.output_dir, f"raw_trajectories_N{n}.json")
+        if args.resume and os.path.exists(final_path):
+            with open(final_path) as f:
+                saved = json.load(f)
+            if len(saved["results"]) >= args.prompts_per_n:
+                print(f"N={n}: already complete ({len(saved['results'])} prompts), skipping")
+                all_results.extend(saved["results"])
+                continue
+
         # Use different seed offset per N to get different prompts
         results = generate_paired_trajectories(
             model, tokenizer, pool, n, args.prompts_per_n,
-            seed=args.seed + n * 1000, device=args.device)
+            seed=args.seed + n * 1000, device=args.device,
+            checkpoint_dir=checkpoint_dir if not args.dry_run else None,
+            checkpoint_every=args.checkpoint_every)
         all_results.extend(results)
         print(f"N={n}: {len(results)} prompt pairs generated")
 
