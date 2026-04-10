@@ -180,6 +180,7 @@ for N in 2 4 8; do
         --batch_size 1 \
         --grad_accum 8 \
         --split_seed "$SPLIT_SEED" \
+        --skip_eval \
         "${DPO_EXTRA_ARGS[@]}"
 
     echo ""
