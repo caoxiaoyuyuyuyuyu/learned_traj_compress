@@ -161,7 +161,7 @@ def evaluate_collapse_curve(model_name, model, tokenizer, pool, n_values, sample
 
             with torch.no_grad():
                 output_ids = model.generate(
-                    **inputs, max_new_tokens=2048,
+                    **inputs, max_new_tokens=4096,
                     do_sample=False, temperature=None, top_p=None)
 
             response = tokenizer.decode(output_ids[0][inputs["input_ids"].shape[1]:],

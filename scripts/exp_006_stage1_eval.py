@@ -180,7 +180,7 @@ def score_item(generated_text, gold_answers, n_generated_tokens, max_new_tokens)
 
 
 @torch.no_grad()
-def evaluate_model(model, tokenizer, test_items, max_new_tokens=2048, batch_size=1):
+def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096, batch_size=1):
     """Generate responses and compute EM for each test item."""
     results = []
     for i, item in enumerate(test_items):
@@ -249,7 +249,7 @@ def main():
     parser.add_argument("--data_dir", default="/root/autodl-tmp/learned_traj_compress/artifacts/phase1d_v2_data")
     parser.add_argument("--output_dir", default="/root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval")
     parser.add_argument("--split_seed", type=int, default=42)
-    parser.add_argument("--max_new_tokens", type=int, default=2048)
+    parser.add_argument("--max_new_tokens", type=int, default=4096)
     parser.add_argument("--n_values", type=int, nargs="+", default=[2, 4, 8],
                         help="Which N values to evaluate on")
     args = parser.parse_args()
