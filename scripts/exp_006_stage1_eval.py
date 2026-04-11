@@ -300,6 +300,17 @@ def main():
                         help="Which N values to evaluate on")
     args = parser.parse_args()
 
+    # ── fail-fast: echo cmdline + validate adapter flags ──
+    print(f"[cmdline] {' '.join(sys.argv)}", flush=True)
+    if "sft" in args.model_name or "dpo" in args.model_name:
+        assert args.sft_adapter is not None, (
+            f"model_name={args.model_name} requires --sft_adapter (got None)"
+        )
+    if "dpo" in args.model_name:
+        assert args.dpo_adapter is not None, (
+            f"model_name={args.model_name} requires --dpo_adapter (got None)"
+        )
+
     t0 = time.time()
     os.makedirs(args.output_dir, exist_ok=True)
 
