@@ -208,7 +208,7 @@ fi
 if [ -d "$SFT_DIR" ]; then
     echo ""
     echo "--- Evaluating: ${SFT_EVAL_NAME} ---"
-    python3 "${SCRIPT_DIR}/exp_006_stage1_eval.py" \
+    python3 -u "${SCRIPT_DIR}/exp_006_stage1_eval.py" \
         --model_path "$MODEL_PATH" \
         --sft_adapter "$SFT_DIR" \
         --model_name "$SFT_EVAL_NAME" \
@@ -227,7 +227,7 @@ for N in 2 4 8; do
     if [ -d "$DPO_DIR" ]; then
         echo ""
         echo "--- Evaluating: ${DPO_EVAL_NAME} ---"
-        python3 "${SCRIPT_DIR}/exp_006_stage1_eval.py" \
+        python3 -u "${SCRIPT_DIR}/exp_006_stage1_eval.py" \
             --model_path "$MODEL_PATH" \
             --sft_adapter "$SFT_DIR" \
             --dpo_adapter "$DPO_DIR" \

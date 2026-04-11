@@ -65,7 +65,7 @@ echo "Stage 2 done: $(date)"
 echo ""
 echo "=== STAGE 3: Evaluation ==="
 echo "Start: $(date)"
-python scripts/phase1d_evaluate.py \
+python -u scripts/phase1d_evaluate.py \
     --models \
         "3B-SFT:${OUT_3B_SFT}" \
         "3B-DPO:${OUT_3B_DPO}" \
