@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from collections import defaultdict
@@ -19,6 +20,18 @@ from collections import defaultdict
 import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+def _git_commit_sha():
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=os.path.dirname(os.path.abspath(__file__)) + "/..",
+            stderr=subprocess.DEVNULL,
+        )
+        return out.decode().strip()
+    except Exception:
+        return "unknown"
 
 # Reuse the project's canonical EM utilities (matches MEM1 training reward
 # semantics; resolves Reviewer BUG 2 — formerly eval.py used a divergent
@@ -180,9 +193,13 @@ def score_item(generated_text, gold_answers, n_generated_tokens, max_new_tokens)
 
 
 @torch.no_grad()
-def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096, batch_size=1):
+def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096):
     """Generate responses and compute EM for each test item."""
     results = []
+    input_lens = []
+    input_truncated_count = 0
+    tok_max_len = getattr(tokenizer, "model_max_length", None) or 4096
+    tok_cap = min(tok_max_len, 4096)
     for i, item in enumerate(test_items):
         user_content = get_prompt_text(item)
         gold_answers = item.get("gold_answers", [])
@@ -196,6 +213,9 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096, batch_size
         inputs = tokenizer(input_text, return_tensors="pt", truncation=True,
                            max_length=4096).to(model.device)
         input_len = inputs["input_ids"].shape[1]
+        input_lens.append(int(input_len))
+        if input_len >= tok_cap:
+            input_truncated_count += 1
 
         outputs = model.generate(
             **inputs,
@@ -204,10 +224,16 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096, batch_size
             temperature=None,
             top_p=None,
             pad_token_id=tokenizer.pad_token_id,
+            stop_strings=["</answer>"],
+            tokenizer=tokenizer,
         )
         generated_ids = outputs[0][input_len:]
         n_generated = int(generated_ids.shape[0])
         generated = tokenizer.decode(generated_ids, skip_special_tokens=True)
+
+        # Fallback: if stop_strings stripped </answer>, re-append for extract_answer
+        if '<answer>' in generated and '</answer>' not in generated:
+            generated += '</answer>'
 
         scored = score_item(generated, gold_answers, n_generated, max_new_tokens)
 
@@ -223,6 +249,7 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096, batch_size
             "em_partial": scored["em_partial"],
             "truncated": scored["truncated"],
             "n_generated_tokens": n_generated,
+            "input_len": int(input_len),
         })
 
         if (i + 1) % 10 == 0 or i == 0:
@@ -231,7 +258,26 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096, batch_size
                   f"em_partial={scored['em_partial']:.3f} "
                   f"trunc={scored['truncated']}")
 
-    return results
+    # Input length distribution
+    if input_lens:
+        sorted_lens = sorted(input_lens)
+        nn = len(sorted_lens)
+        def _pct(p):
+            k = min(nn - 1, max(0, int(round(p * (nn - 1)))))
+            return sorted_lens[k]
+        input_len_stats = {
+            "min": sorted_lens[0],
+            "p50": _pct(0.50),
+            "p99": _pct(0.99),
+            "max": sorted_lens[-1],
+        }
+    else:
+        input_len_stats = {"min": 0, "p50": 0, "p99": 0, "max": 0}
+
+    return results, {
+        "input_len_stats": input_len_stats,
+        "input_truncated_count": int(input_truncated_count),
+    }
 
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -276,8 +322,8 @@ def main():
             continue
 
         print(f"\n=== Evaluating on N={n} ({len(test_prompts[n])} prompts) ===")
-        results = evaluate_model(model, tokenizer, test_prompts[n],
-                                 max_new_tokens=args.max_new_tokens)
+        results, extra = evaluate_model(model, tokenizer, test_prompts[n],
+                                        max_new_tokens=args.max_new_tokens)
 
         em_full_list = [r["em_full"] for r in results]
         em_partial_list = [r["em_partial"] for r in results]
@@ -291,6 +337,8 @@ def main():
             "em_full": round(em_full_mean, 4),
             "em_partial": round(em_partial_mean, 4),
             "truncated_rate": round(trunc_rate, 4),
+            "input_len_stats": extra["input_len_stats"],
+            "input_truncated_count": extra["input_truncated_count"],
         }
         print(f"  N={n} em_full={em_full_mean:.4f} "
               f"em_partial={em_partial_mean:.4f} "
@@ -303,6 +351,13 @@ def main():
         "sft_adapter": args.sft_adapter,
         "dpo_adapter": args.dpo_adapter,
         "split_seed": args.split_seed,
+        "metadata": {
+            "max_new_tokens": args.max_new_tokens,
+            "stop_strings": ["</answer>"],
+            "tokenizer": getattr(tokenizer, "name_or_path", tokenizer_path),
+            "do_sample": False,
+            "commit": _git_commit_sha(),
+        },
         "summary": summary,
         "details": all_results,
         "elapsed_seconds": time.time() - t0,
