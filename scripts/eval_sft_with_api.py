@@ -86,6 +86,21 @@ from utils.split import assign_split  # noqa: E402
 
 # ── BM25 corpus builder ─────────────────────────────────────────────
 
+def _get_all_assistant_texts(item):
+    """Extract all assistant trajectory texts from a raw_trajectories item.
+
+    raw_trajectories format: item["responses"] is a list of dicts, each with
+    "full_assistant" containing the complete trajectory text.
+    test_data.json format: item["assistant_content"] is a single string.
+    """
+    if "responses" in item:
+        return [r["full_assistant"] for r in item["responses"]
+                if "full_assistant" in r]
+    if "assistant_content" in item:
+        return [item["assistant_content"]]
+    return []
+
+
 def build_bm25_corpus(data_dir):
     """Extract all documents from <information> blocks across all trajectories.
 
@@ -106,16 +121,16 @@ def build_bm25_corpus(data_dir):
             results = raw["results"]
 
         for item in results:
-            assistant = item.get("assistant_content", "")
-            for info_block in extract_information_blocks(assistant):
-                for m in doc_pattern.finditer(info_block):
-                    title = m.group(1).strip()
-                    body = m.group(2).strip()
-                    doc_key = f"{title}|{body[:100]}"
-                    if doc_key not in seen:
-                        seen.add(doc_key)
-                        corpus_texts.append(f"{title}. {body}")
-                        corpus_titles.append(title)
+            for assistant_text in _get_all_assistant_texts(item):
+                for info_block in extract_information_blocks(assistant_text):
+                    for m in doc_pattern.finditer(info_block):
+                        title = m.group(1).strip()
+                        body = m.group(2).strip()
+                        doc_key = f"{title}|{body[:100]}"
+                        if doc_key not in seen:
+                            seen.add(doc_key)
+                            corpus_texts.append(f"{title}. {body}")
+                            corpus_titles.append(title)
 
     print(f"[BM25] Built corpus: {len(corpus_texts)} unique documents "
           f"from {data_dir}", flush=True)
@@ -151,6 +166,7 @@ def bm25_search(bm25, corpus_texts, corpus_titles, query, top_k=4):
 def build_oracle_map(data_dir, split_seed=42):
     """Build a map from user_content -> ordered list of <information> blocks.
 
+    Uses the best (highest EM) response's trajectory for each test prompt.
     Only includes test-split items.
     """
     oracle = {}
@@ -165,10 +181,19 @@ def build_oracle_map(data_dir, split_seed=42):
             prompt = get_prompt_text(item)
             if assign_split(prompt, seed=split_seed) != "test":
                 continue
-            assistant = item.get("assistant_content", "")
-            blocks = extract_information_blocks(assistant)
-            if blocks:
-                oracle[prompt] = blocks
+            # Pick the best response (highest total_em) for oracle blocks
+            best_blocks = []
+            best_em = -1
+            for assistant_text in _get_all_assistant_texts(item):
+                blocks = extract_information_blocks(assistant_text)
+                if blocks:
+                    # Try to get EM from the response; fall back to len(blocks)
+                    score = len(blocks)
+                    if score > best_em or not best_blocks:
+                        best_em = score
+                        best_blocks = blocks
+            if best_blocks and prompt not in oracle:
+                oracle[prompt] = best_blocks
 
     print(f"[Oracle] Built oracle map: {len(oracle)} test prompts with "
           f"information blocks", flush=True)
@@ -243,6 +268,11 @@ def generate_with_retrieval(
 ):
     """Generate iteratively, intercepting <search> tags for real retrieval.
 
+    After each generate() call, checks whether a new <search>...</search> tag
+    appeared. If so, extracts query, retrieves, injects <information>, and
+    continues. Handles both cases where stop_strings includes/excludes the
+    stop string in output.
+
     Args:
         retrieval_fn: callable(query, round_idx) -> str (information block)
             Returns None if no retrieval available for this round.
@@ -254,6 +284,7 @@ def generate_with_retrieval(
     total_generated = 0
     n_searches = 0
     current_text = full_input
+    n_search_tags_processed = 0  # track how many <search> tags we've handled
 
     for round_idx in range(max_search_rounds + 1):
         remaining_tokens = max_new_tokens - total_generated
@@ -276,46 +307,45 @@ def generate_with_retrieval(
         n_new = len(new_tokens)
         total_generated += n_new
         generated_chunk = tokenizer.decode(new_tokens, skip_special_tokens=False)
-
-        # stop_strings are not included in output tokens; re-check what stopped us
-        # by looking at what the model was about to produce
         current_text += generated_chunk
 
-        # Check if we stopped at </search>
-        # transformers stop_strings strips the stop string from output,
-        # so we need to check if the text ends with <search>...</search> pattern
-        # Actually, stop_strings in HF may or may not include the stop string.
-        # Let's check if the last content looks like it was cut at a search tag.
+        # Count all <search>...</search> tags in the generated portion
+        gen_so_far = current_text[len(full_input):]
+        all_search_tags = list(re.finditer(
+            r"<search>(.*?)</search>", gen_so_far, re.DOTALL))
+        n_complete_tags = len(all_search_tags)
 
-        # Heuristic: if text ends with content after <search> but no </search>,
-        # the stop_string fired. Append </search> to complete the tag.
-        last_search_open = current_text.rfind("<search>")
-        last_search_close = current_text.rfind("</search>")
-        if last_search_open > last_search_close:
-            # Stop string fired on </search> — add it back
+        # Also check for unclosed <search> (stop_string stripped </search>)
+        last_open = gen_so_far.rfind("<search>")
+        last_close = gen_so_far.rfind("</search>")
+        has_unclosed_search = (last_open >= 0 and last_open > last_close)
+
+        if has_unclosed_search:
+            # stop_string fired and excluded </search> — add it back
             current_text += "</search>"
-            query = extract_search_query(current_text)
-            if query:
-                n_searches += 1
-                info_block = retrieval_fn(query, round_idx)
-                if info_block is not None:
-                    current_text += "\n" + info_block + "\n"
-                    continue
-                else:
-                    # No retrieval available, let model continue without injection
-                    continue
-            else:
-                break
+            gen_so_far = current_text[len(full_input):]
+            all_search_tags = list(re.finditer(
+                r"<search>(.*?)</search>", gen_so_far, re.DOTALL))
+            n_complete_tags = len(all_search_tags)
+
+        if n_complete_tags > n_search_tags_processed:
+            # New search tag(s) found — process the latest one
+            query = all_search_tags[-1].group(1).strip()
+            n_search_tags_processed = n_complete_tags
+            n_searches += 1
+            info_block = retrieval_fn(query, n_searches - 1)
+            if info_block is not None:
+                current_text += "\n" + info_block + "\n"
+            continue
         else:
-            # Either hit </answer> or max_tokens — done
-            # Check if </answer> stop string fired
-            last_answer_open = current_text.rfind("<answer>")
-            last_answer_close = current_text.rfind("</answer>")
-            if last_answer_open > last_answer_close:
+            # No new search tag — must be </answer> or max_tokens or EOS
+            # Check for unclosed <answer> tag
+            last_ans_open = gen_so_far.rfind("<answer>")
+            last_ans_close = gen_so_far.rfind("</answer>")
+            if last_ans_open >= 0 and last_ans_open > last_ans_close:
                 current_text += "</answer>"
             break
 
-    # Extract only the generated part (after the initial prompt)
     generated_text = current_text[len(full_input):]
     return generated_text, total_generated, n_searches
 
