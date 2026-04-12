@@ -1,0 +1,21 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented a three-phase diagnostic framework for understanding why SFT distillation of multi-objective RL policies fails catastrophically. Applied to MEM1---a 7B RL agent for retrieval-augmented QA---our analysis yields three findings:
+
+\begin{enumerate}[leftmargin=*,nosep]
+    \item Multi-objective performance degrades monotonically with objective count $N$ (EM $0.62 \to 0.341$ from $N\!=\!1$ to $N\!=\!16$), with no evidence of a phase transition within the tested range. The distillation target is to slow this decline, not to recover from a cliff.
+    \item RL weight changes concentrate $2$--$6\times$ supra-random along the base model's principal singular directions, while SFT distillation recovers significantly less of this geometric structure ($1.47\times$ vs.\ $2.78\times$ at $k\!=\!256$; Wilcoxon $p < 1.3 \times 10^{-32}$ across 196 weight matrices, with 99\% of layers showing $r_\text{RL} > r_\text{SFT}$).
+    \item Matched-sample DPO---a stronger training signal than SFT---fails to close the gap: the best variant improves over SFT by only $+1.0$pp at $N\!=\!8$ ($p = 0.163$), far below practical significance. A truncation confound analysis reveals that an earlier apparent advantage ($+2.4$pp, $p < 0.001$) was partly an artifact of insufficient generation budget penalizing SFT disproportionately.
+\end{enumerate}
+
+Taken together, these results indicate that the distillation bottleneck for multi-objective RL policies is not addressable by richer preference signals alone. A causal intervention---providing oracle retrieval results at inference time---recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$), confirming that behavioral mismatch is a primary driver: the student learns a viable search strategy but cannot execute it without the retrieval backend. The student faithfully reproduces the teacher's search behavior (mean query Jaccard $= 0.95$, single-round pattern matching the teacher's $>$95\% single-search training data), indicating that SFT successfully transfers procedural knowledge---the failure is purely in execution capability.
+
+\subsection{Limitations}
+\label{sec:limitations}
+
+\paragraph{Scope.}
+All experiments use one RL teacher (MEM1, 7B) on one domain (multi-objective RAG QA). A 7B full-rank pooled SFT quantifies the capacity contribution at $\approx$12--14\% of the teacher--student gap across all $N$ (\S\ref{sec:capacity}); however, the training-method mismatch (full-rank vs.\ LoRA) makes this best-effort isolation. The SVD Gaussian random baseline is validated by the Wilcoxon test ($p < 1.3 \times 10^{-32}$, $n\!=\!196$).
+
+\paragraph{DPO power and future work.}
+DPO uses only 176 matched pairs ($0.4\%$ perfect rate at $N\!=\!8$), but power $>0.99$ for $5$pp (floor $2.7$pp). Oracle retrieval uses teacher passages (upper bound); BM25 retrieval recovers $+9$--$12$pp (\S\ref{sec:causal}), confirming the finding generalizes beyond the oracle setting. Training a 3B RL baseline and cross-task generalization remain as future work.

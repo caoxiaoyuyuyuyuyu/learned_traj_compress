@@ -1,0 +1,106 @@
+\section{Diagnostic Framework}
+\label{sec:framework}
+
+We develop a three-phase diagnostic framework that progressively localizes the distillation failure from task-level symptoms to representation-level mechanisms. Phase~1a quantifies how per-objective performance degrades as objective count $N$ increases, establishing the shape of the collapse. Phase~1b uses singular value decomposition (SVD) to compare the geometric footprint of RL and SFT weight changes in the base model's principal subspace. Phase~1c tests whether activation-level probes can recover per-objective performance signals, yielding a negative result that bounds the mechanism to weight-space geometry rather than activation-space encoding.
+
+%--------------------------------------------------------------
+\subsection{Phase 1a: Collapse Curve}
+\label{sec:collapse}
+
+We first ask: \emph{does multi-objective EM degrade gradually or exhibit a sharp phase transition?} The answer determines whether distillation should target a cliff recovery or a slope reduction.
+
+\paragraph{Setup.}
+We evaluate the MEM1 RL policy (Qwen2.5-7B + PPO, trained via veRL~\cite{sheng2024verl}) and the Qwen2.5-7B base model on a multi-objective RAG QA task drawn from FlashRAG~\cite{jin2025flashrag}. Each prompt contains $N$ questions separated by semicolons ($N \in \{1, 2, 4, 8, 12, 16\}$). The agent operates iteratively---\texttt{think} $\to$ \texttt{search} $\to$ \texttt{information} $\to$ \texttt{answer}---and receives a normalized Exact Match (EM) score per objective (SQuAD standard). We report \emph{em\_partial}: the mean per-objective EM averaged across all objectives and prompts at each $N$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{collapse_curve.pdf}
+\caption{Multi-objective performance collapse. The RL teacher (MEM1) degrades monotonically with objective count $N$, while both SFT and DPO students retain $<$8\% of the teacher's capability at $N\!=\!8$. The base model (no RL) collapses immediately. Error bars show 95\% bootstrap CIs (10{,}000 resamples).}
+\label{fig:collapse_curve}
+\end{figure}
+
+\paragraph{Results.}
+Figure~\ref{fig:collapse_curve} plots em\_partial for both models across $N$. MEM1's performance degrades monotonically from $0.62$ at $N\!=\!1$ to $0.341$ at $N\!=\!16$ (a 45\% relative drop). A linear model provides a reasonable first-order approximation ($\text{EM} \approx 0.62 - 0.018 \cdot N$, $R^2 = 0.984$; largest residual $-2.2$pp at $N\!=\!8$), and fits better than a $\log N$ model ($R^2 = 0.949$). We use this as a descriptive summary, not a mechanistic claim about the form of the degradation. Holm--Bonferroni corrected pairwise comparisons against $N\!=\!2$ reach significance at $N\!=\!12$ and $N\!=\!16$ ($p < 0.05$); the overall effect size is large (Cohen's $d = 0.97$). No inflection point or S-curve is observed.
+
+The base model, by contrast, collapses immediately. At $N\!=\!1$ its EM is already $0.30$ (half of MEM1), and for $N \geq 2$ it fluctuates between $0.075$ and $0.148$ with frequent answer-extraction failures (the base model often fails to produce text parseable as a structured multi-objective answer). The RL--base gap is evident from $N\!=\!1$ and widens with $N$: at $N\!=\!8$, MEM1 achieves $0.455$ vs.\ the base's $0.125$.
+
+\paragraph{Implication.}
+The monotonic degradation profile has a direct consequence for distillation: the target is to \emph{slow the decline}, not to recover performance after a phase transition. Any student model that merely preserves base-level capability will fail across the board; the distillation must transfer the RL-specific mechanism that sustains the shallow slope. This motivates the next phase: identifying what that mechanism looks like in weight space.
+
+%--------------------------------------------------------------
+\subsection{Phase 1b: SVD Alignment Analysis}
+\label{sec:svd}
+
+Phase~1a establishes that RL training endows a multi-objective capability absent in the base model. We now ask: \emph{where does the RL fine-tuning place its weight changes relative to the base model's existing structure, and does SFT distillation land in the same region?}
+
+\paragraph{Method.}
+Let $\mathbf{W}_\text{base} \in \mathbb{R}^{m \times n}$ denote a weight matrix from the base model and $\mathbf{W}_\text{ft}$ the corresponding matrix from a fine-tuned model (RL or SFT). We compute the weight delta $\Delta\mathbf{W} = \mathbf{W}_\text{ft} - \mathbf{W}_\text{base}$ and measure how much of $\Delta\mathbf{W}$ falls within the base model's principal subspace.
+
+Concretely, we compute the truncated SVD of $\mathbf{W}_\text{base}$:
+\begin{equation}
+\mathbf{W}_\text{base} = \mathbf{U} \boldsymbol{\Sigma} \mathbf{V}^\top
+\end{equation}
+and retain the top-$k$ left singular vectors $\mathbf{U}_k \in \mathbb{R}^{m \times k}$ and right singular vectors $\mathbf{V}_k \in \mathbb{R}^{n \times k}$. The \emph{observed alignment} of $\Delta\mathbf{W}$ with this subspace is the fraction of its Frobenius norm captured by the projection:
+\begin{equation}
+\alpha_\text{obs}(k) = \frac{\| \mathbf{U}_k^\top \Delta\mathbf{W}\, \mathbf{V}_k \|_F}{\| \Delta\mathbf{W} \|_F}
+\end{equation}
+
+In high-dimensional spaces, even random matrices exhibit non-trivial projection onto any fixed subspace due to concentration of measure. To calibrate, we generate 100 random matrices of the same dimensions as $\Delta\mathbf{W}$ (entries drawn i.i.d.\ from $\mathcal{N}(0, \sigma^2)$, where $\sigma^2$ matches the variance of $\Delta\mathbf{W}$) and compute their mean alignment $\alpha_\text{rand}(k)$. The \emph{alignment ratio} is:
+\begin{equation}
+r(k) = \frac{\alpha_\text{obs}(k)}{\alpha_\text{rand}(k)}
+\label{eq:alignment_ratio}
+\end{equation}
+
+A ratio of $r = 1$ indicates alignment indistinguishable from random; $r > 1$ indicates supra-random concentration along the base model's principal directions. We apply this analysis to all 196 weight matrices in the 28-layer Qwen2.5-7B architecture.
+
+We also decompose the projection into \emph{U-side} and \emph{V-side} components. The U-side alignment $\| \mathbf{U}_k^\top \Delta\mathbf{W} \|_F / \| \Delta\mathbf{W} \|_F$ measures how much $\Delta\mathbf{W}$ concentrates along the base model's output directions (left singular vectors), while the V-side alignment $\| \Delta\mathbf{W}\, \mathbf{V}_k \|_F / \| \Delta\mathbf{W} \|_F$ captures concentration along input directions (right singular vectors). This decomposition reveals whether RL modifies how a layer \emph{reads} its input or \emph{writes} its output.
+
+\paragraph{RL weight changes are supra-random aligned with the base subspace.}
+Table~\ref{tab:svd_alignment} reports the alignment ratio $r(k)$ for the RL--base delta ($\Delta\mathbf{W}_\text{RL} = \mathbf{W}_\text{RL} - \mathbf{W}_\text{base}$) across $k \in \{64, 128, 256, 512, 1024\}$. At $k\!=\!64$, the ratio is $6.48\times$---RL weight changes concentrate along the base model's top 64 singular directions at nearly $6.5\times$ the rate expected by chance. The ratio decreases monotonically as $k$ grows ($4.11\times$ at $k\!=\!128$, $2.78\times$ at $k\!=\!256$, $2.01\times$ at $k\!=\!512$, $1.64\times$ at $k\!=\!1024$), consistent with changes that are tightly focused on the most prominent base directions rather than uniformly distributed.
+
+This finding contradicts the intuition that RL ``expands'' the model into novel directions. Instead, RL fine-tuning operates by \emph{refining} the base model's existing representational structure---adjusting weights preferentially along directions that already carry the most variance.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+& $k\!=\!64$ & $k\!=\!128$ & $k\!=\!256$ & $k\!=\!512$ & $k\!=\!1024$ \\
+\midrule
+RL--base    & 6.48 & 4.11 & 2.78 & 2.01 & 1.64 \\
+SFT--base   & 2.92 & ---  & 1.47 & ---  & ---  \\
+RL--SFT     & 3.80 & ---  & 1.81 & ---  & ---  \\
+\midrule
+\multicolumn{6}{l}{\footnotesize \textit{RL/SFT ratio at matched $k$:}} \\
+\quad $r_\text{RL}/r_\text{SFT}$ & 2.22 & --- & 1.89 & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{SVD alignment ratio $r(k)$ (Eq.~\ref{eq:alignment_ratio}) for three weight deltas, averaged over 196 matrices. RL--base alignment is 2--6$\times$ supra-random and consistently stronger than SFT--base (Wilcoxon $p < 1.3 \times 10^{-32}$ at all $k$; per-layer distributions in Appendix~\ref{app:svd_boxplot}). Entries marked ``---'' indicate $k$ values not computed for SFT/RL--SFT deltas due to computational budget; the reported $k \in \{64, 256\}$ span the range.}
+\label{tab:svd_alignment}
+\end{table}
+
+\paragraph{SFT distillation lands in a different subspace.}
+To enable same-architecture comparison, we train a full-rank SFT model (Qwen2.5-7B) on RL teacher trajectories and apply the same analysis. Using the same architecture and training regime (full-rank fine-tuning for both RL and SFT) ensures that alignment ratios reflect differences in \emph{training objective} (PPO vs.\ behavior cloning) rather than dimensional or rank confounds. The distillation experiments in \S\ref{sec:distillation} use a separate Qwen2.5-3B student (LoRA rank 32), reflecting the deployment cost constraint. The SFT--base alignment ratio is consistently lower than RL--base: $2.92\times$ vs.\ $6.48\times$ at $k\!=\!64$ and $1.47\times$ vs.\ $2.78\times$ at $k\!=\!256$ (RL/SFT ratio $\approx 2\!:\!1$ at both $k$ values). The RL--SFT delta ($\Delta\mathbf{W}_\text{RL-SFT} = \mathbf{W}_\text{RL} - \mathbf{W}_\text{SFT}$) has an alignment ratio of $3.80\times$ at $k\!=\!64$ and $1.81\times$ at $k\!=\!256$, indicating that the RL and SFT fine-tuning endpoints occupy partially overlapping but geometrically distinct regions of the base model's principal subspace.
+
+The RL--SFT gap is statistically robust across the full architecture. A Wilcoxon signed-rank test on per-matrix $r(k)$ values yields $p < 1.3 \times 10^{-32}$ at every $k$ tested; 99\% of the 196 weight matrices show $r_\text{RL} > r_\text{SFT}$ (per-layer boxplot in Appendix~\ref{app:svd_boxplot}). The per-matrix distribution is right-skewed ($r_\text{RL} = 2.78 \pm 2.57$, $r_\text{SFT} = 1.47 \pm 2.19$ at $k\!=\!256$; mean $\pm$ std), with a small number of outlier layers reaching $r > 10$. Only 2--3 layers show $r_\text{SFT} > r_\text{RL}$ (most notably layer~1 \texttt{mlp.down\_proj}), and in these cases both ratios remain well above random ($r > 2$), indicating that the exception layers are high-alignment for \emph{both} methods rather than SFT-dominant.
+
+This subspace gap is \emph{consistent with} the observed distillation failure, though it does not by itself establish causation (\S\ref{sec:distillation} tests this directly). The RL policy's weight changes are tightly concentrated along the base model's most important directions, while SFT, trained on the \emph{same} RL trajectories, distributes its changes more diffusely, landing closer to the random baseline.
+
+\paragraph{Layer-type decomposition.}
+The alignment gap between RL and SFT is not uniform across layer types. At $k\!=\!256$, MLP layers show stronger RL--base alignment ($3.49\times$) than attention layers ($2.25\times$), while SFT--base alignment is $2.01\times$ for MLP and $1.07\times$ for attention. The attention result is striking: SFT attention weight changes are nearly indistinguishable from random ($1.07\times$), while RL attention changes are $2.25\times$ supra-random. This suggests that the multi-objective capability encoded in attention weights is particularly resistant to SFT transfer.
+
+\paragraph{Methodological considerations.}
+Both the RL and SFT models compared here are full-rank fine-tunes of the same Qwen2.5-7B base, ensuring that the alignment ratios reflect differences in training objective rather than architectural or rank confounds. The random baseline ($n\!=\!100$ full-rank Gaussian matrices per weight, matched in shape and variance) is consistent with both models' training regime.
+
+\paragraph{U-side / V-side asymmetry.}
+The projection decomposition reveals a structural difference between attention and MLP layers. For attention layers, the U-side (output direction) alignment is far stronger than the V-side: $0.31$ vs.\ $0.12$ at $k\!=\!256$. RL modifies how attention writes its output much more than how it reads its input. For MLP layers, the pattern reverses: U-side $= 0.05$, V-side $= 0.11$. RL modifies how MLP layers select their input features more than how they project outputs.
+
+This asymmetry adds a further dimension to the alignment gap: a successful distillation method would need to replicate not just the magnitude of RL weight changes but their directional structure---which side of the SVD decomposition to modify and by how much---across different layer types. The gap at the aggregate level ($1.47\times$ vs.\ $2.78\times$) suggests that behavior cloning does not recover this structure, a hypothesis we test causally in \S\ref{sec:distillation}.
+
+%--------------------------------------------------------------
+\subsection{Phase 1c: Activation Probing (Negative Result)}
+\label{sec:probing}
+
+A natural follow-up is whether the RL capability is recoverable from activations, enabling ``probe-then-steer'' interventions~\cite{li2023iti} that bypass weight-space alignment. We test this with both linear and nonlinear probes on activation differences $\Delta\mathbf{h}_l = \mathbf{h}_l^\text{RL} - \mathbf{h}_l^\text{base}$ ($n\!=\!300$ prompts, 6 layers, $k \in \{64, 256\}$). Neither succeeds: linear probes achieve binary accuracy of $0.72$, below the majority-class baseline of $0.76$, with negative $R^2$ for regression. MLP probes (2-layer, hidden dim 128) perform \emph{worse} than linear probes in 47 of 55 feature/layer combinations ($p = 4.83 \times 10^{-11}$, paired $t$-test). A random-feature noise floor analysis confirms that 94.5\% of real probe $|\rho|$ values fall within the range achievable by random projections. Full details are in Appendix~\ref{app:probing}.
+
+Within the probe families tested (single-layer linear and 2-layer MLP with hidden dimension 128), we find no recoverable activation-space signal corresponding to the weight-space SVD signature. The question of where the bottleneck ultimately resides is taken up in \S\ref{sec:distillation} and \S\ref{sec:conclusion}.

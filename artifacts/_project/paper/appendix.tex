@@ -1,0 +1,96 @@
+\appendix
+
+\section{Training Details}
+\label{app:training}
+
+Table~\ref{tab:training_hyperparams} summarizes the hyperparameters for all training stages.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+& SFT (pooled) & DPO (per-$N$) \\
+\midrule
+Base model & Qwen2.5-3B & SFT checkpoint \\
+LoRA rank & 32 & 32 \\
+LoRA $\alpha$ & 64 & 64 \\
+LoRA target & all linear & all linear \\
+Learning rate & $2 \times 10^{-4}$ & $2 \times 10^{-5}$ \\
+Epochs & 3 & 1 \\
+Batch size & 4 & 4 \\
+Gradient accum. & 4 & 4 \\
+Max seq. length & 6144 & 6144 \\
+Optimizer & AdamW & AdamW \\
+Weight decay & 0.01 & 0.01 \\
+Warmup ratio & 0.03 & 0.1 \\
+DPO $\beta$ & --- & 0.05 \\
+\midrule
+Training samples & 1{,}118 & 176 raw pairs \\
+ & (partial-credit, & (matched to $N\!=\!4$ \\
+ & pooled $N \in \{2,4,8\}$) & bottleneck) \\
+Train/test split & \multicolumn{2}{c}{hash-based, test\_frac $= 0.25$} \\
+\bottomrule
+\end{tabular}
+\caption{Training hyperparameters for SFT and DPO stages. Both stages use LoRA (rank 32) on Qwen2.5-3B. The SFT stage uses partial-credit trajectories (inclusion: total\_em $\geq 1$); DPO stages use matched-sample preference pairs subsampled to 176 raw pairs.}
+\label{tab:training_hyperparams}
+\end{table}
+
+\paragraph{SFT convergence (3B).}
+The 3B SFT stage converges within 3 epochs with monotonically decreasing training loss (final loss $\approx 0.91$). No overfitting is observed on the held-out split.
+
+\paragraph{7B capacity-isolation model.}
+Table~\ref{tab:7b_hyperparams} summarizes the hyperparameters for the 7B full-rank pooled SFT used in the capacity-isolation experiment (\S\ref{sec:capacity}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lc}
+\toprule
+& 7B SFT (pooled) \\
+\midrule
+Base model & Qwen2.5-7B \\
+Fine-tuning & Full-rank (no LoRA) \\
+Learning rate & $2 \times 10^{-5}$ \\
+Epochs & 2 \\
+Batch size & 1 \\
+Gradient accum. & 4 (eff.\ batch 4) \\
+Max seq.\ length & 6144 \\
+Optimizer & AdamW \\
+Precision & bf16 \\
+Gradient checkpointing & Yes \\
+\midrule
+Training samples & 1{,}118 \\
+ & (same partial-credit pooled \\
+ & data as 3B SFT) \\
+Training time & 19.5 min (560 steps) \\
+Final train loss & 0.83 \\
+\bottomrule
+\end{tabular}
+\caption{Training hyperparameters for the 7B full-rank capacity-isolation SFT. This model uses the same pooled data and inclusion criteria as the 3B LoRA SFT, differing only in model size (7B vs.\ 3B) and fine-tuning method (full-rank vs.\ LoRA rank 32). The lower learning rate ($2 \times 10^{-5}$ vs.\ $2 \times 10^{-4}$) and fewer epochs (2 vs.\ 3) reflect standard practice for full-rank fine-tuning of larger models.}
+\label{tab:7b_hyperparams}
+\end{table}
+
+\paragraph{DPO convergence.}
+All three DPO variants ($N \in \{2, 4, 8\}$) train for 1 epoch. Final training losses range from $0.595$ (DPO$_{N=2}$) to $0.678$ (DPO$_{N=8}$). The rewards/margins are positive but small: $0.207$ (DPO$_{N=2}$), $0.100$ (DPO$_{N=4}$), $0.056$ (DPO$_{N=8}$), consistent with the limited preference signal available from 176 matched pairs. The decreasing margin with $N$ reflects the increasing difficulty of producing contrastive signal at higher objective counts.
+
+\section{SVD Alignment Per-Layer Distribution}
+\label{app:svd_boxplot}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{svd_alignment_boxplot.pdf}
+\caption{Per-layer SVD alignment ratio $r(k\!=\!256)$ for RL--base and SFT--base deltas across all 196 weight matrices. RL alignment exceeds SFT in 99\% of layers (Wilcoxon $p < 1.3 \times 10^{-32}$). Boxes show IQR; whiskers extend to $1.5\times$ IQR.}
+\label{fig:svd_boxplot}
+\end{figure}
+
+\section{Activation Probing Details}
+\label{app:probing}
+
+We extract activation differences $\Delta\mathbf{h}_l = \mathbf{h}_l^\text{RL} - \mathbf{h}_l^\text{base}$ at layers $l \in \{0, 3, 7, 11, 15, 19\}$ for $n = 300$ prompts, projecting onto the top-$k$ principal directions ($k \in \{64, 256\}$) of the base model's weight matrices. Eight feature variants are tested: raw activations $\mathbf{h}^\text{RL}$, $\mathbf{h}^\text{base}$, their difference $\Delta\mathbf{h}$, and top-$k$ projections thereof.
+
+\paragraph{Linear probes.} Binary classification (per-objective EM above/below median) achieves accuracy $0.72$, below the majority-class baseline $0.76$. Regression probes yield negative $R^2$ across all 55 (feature, layer, $k$) combinations.
+
+\paragraph{MLP probes.} Two-layer MLPs (hidden dimension 128, ReLU) trained on the same features predict per-objective EM as a continuous target (Spearman $\rho$). MLP probes lose to linear probes in 47/55 cases (85.5\%; paired $t = -8.19$, $p = 4.83 \times 10^{-11}$, Cohen's $d = -1.105$). Mean $\rho$: $-0.011$ (MLP) vs.\ $0.073$ (linear).
+
+\paragraph{Random-feature baseline.} We construct 5 random orthonormal bases $\times$ 6 layers $\times$ 2 $k$ values. The maximum $|\rho|$ under random features is $0.224$; 52/55 (94.5\%) of real linear probe $|\rho|$ values fall within this noise band. The per-objective signal in $\Delta\mathbf{h}$ is indistinguishable from random projections.

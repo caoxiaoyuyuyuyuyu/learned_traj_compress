@@ -1,0 +1,23 @@
+\section{Introduction}
+\label{sec:intro}
+
+Reinforcement learning (RL) can endow language models with multi-objective capabilities that supervised fine-tuning alone does not produce. For instance, the MEM1 agent~\cite{zhou2025mem1}---a Qwen2.5-7B model trained with PPO via veRL~\cite{sheng2024verl}---sustains a per-objective Exact Match (EM) of $0.62$ when answering a single question, and still achieves $0.455$ at $N\!=\!8$ simultaneous objectives in a retrieval-augmented QA task. The same base model, without RL, collapses to $\text{EM} \leq 0.15$ for $N \geq 2$.
+
+Deploying a 7B RL policy as an always-on sidecar is expensive. A natural solution is to distill the policy into a smaller ($<$3B) student via SFT on teacher trajectories---the standard recipe for knowledge distillation in LLMs~\cite{hsieh2023distilling,gu2024minillm}. Yet when we apply this recipe to MEM1's multi-objective trajectories, the result is catastrophic: a Qwen2.5-3B student trained on 1{,}118 RL trajectories achieves $\text{em\_partial} = 0.025$ at $N\!=\!8$---a $94.5\%$ relative drop from the teacher---with $83\%$ of outputs truncated before the model finishes generating. While some degradation is expected from the 7B$\to$3B capacity reduction, and though we lack a 3B RL baseline to precisely quantify the capacity contribution, the magnitude of degradation (from $0.455$ to $0.025$) strongly suggests factors beyond model size.
+
+Why does distillation fail so completely for multi-objective RL policies? Prior work on RL-to-SFT gaps has examined alignment tax~\cite{askell2021alignment} and mode collapse in single-objective settings~\cite{jin2025rl}, but the multi-objective regime---where the teacher must coordinate across $N$ parallel goals within a single generation---remains unexplored.
+
+We present \textsc{MemDistill}, a three-phase diagnostic framework that progressively localizes the distillation failure from task-level symptoms to representation-level mechanisms to behavior-level explanations:
+
+\begin{enumerate}[leftmargin=*,nosep]
+    \item \textbf{Collapse curve} (\S\ref{sec:collapse}): We establish that multi-objective EM degrades \emph{monotonically} with objective count $N$, providing no evidence for a phase transition within the tested range ($N \leq 16$) and setting ``slow the slope'' as the distillation target.
+    \item \textbf{SVD alignment analysis} (\S\ref{sec:svd}): We show that RL weight changes concentrate $2$--$6\times$ supra-random along the base model's principal directions (depending on subspace rank $k$; see Table~\ref{tab:svd_alignment}), while SFT distillation recovers less of this geometric signature (alignment ratio $1.47\times$ vs.\ $2.78\times$ for RL). The geometric gap raises the question of whether richer training signals can recover RL-like weight structure, motivating the next phase.
+    \item \textbf{Matched-sample distillation} (\S\ref{sec:distillation}): DPO does not close the gap ($+1.0$pp, $p = 0.163$). A causal intervention---providing oracle retrieval at inference---recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$), confirming that the student learns a viable search strategy but cannot execute it without the retrieval backend.
+\end{enumerate}
+
+\paragraph{Contributions.}
+\begin{itemize}[leftmargin=*,nosep]
+    \item A \textbf{diagnostic methodology} combining collapse characterization, weight-space geometric analysis (SVD alignment ratio), and matched-sample preference learning, with a truncation confound detection protocol for verbose RL-distilled outputs.
+    \item An \textbf{empirical finding} that RL weight changes concentrate $2$--$6\times$ supra-random along the base model's principal directions, while SFT does not recover this signature.
+    \item A \textbf{negative result} with \textbf{causal explanation}: DPO fails to close the gap ($+1.0$pp, $p = 0.163$). Providing oracle retrieval at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($p < 0.0001$), causally confirming behavioral mismatch: the student learns a search strategy it cannot execute.
+\end{itemize}

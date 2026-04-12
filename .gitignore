@@ -1,4 +1,7 @@
 artifacts/
+!artifacts/_project/
+!artifacts/_project/paper/
+!artifacts/_project/paper/**
 checkpoints/
 data_snapshots/
 study-packages/
