@@ -19,5 +19,5 @@ We present \textsc{MemDistill}, a three-phase diagnostic framework that progress
 \begin{itemize}[leftmargin=*,nosep]
     \item A \textbf{diagnostic methodology} combining collapse characterization, weight-space geometric analysis (SVD alignment ratio), and matched-sample preference learning, with a truncation confound detection protocol for verbose RL-distilled outputs.
     \item An \textbf{empirical finding} that RL weight changes concentrate $2$--$6\times$ supra-random along the base model's principal directions, while SFT does not recover this signature.
-    \item A \textbf{negative result} with \textbf{causal explanation}: DPO fails to close the gap ($+1.0$pp, $p = 0.163$). Providing oracle retrieval at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($p < 0.0001$), causally confirming behavioral mismatch: the student learns a search strategy it cannot execute.
+    \item A \textbf{negative result} with \textbf{causal explanation}: DPO fails to close the gap ($+1.0$pp, $p = 0.163$). Providing oracle retrieval at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($p < 0.0001$), causally supporting behavioral mismatch: the student learns a search strategy it cannot execute.
 \end{itemize}
