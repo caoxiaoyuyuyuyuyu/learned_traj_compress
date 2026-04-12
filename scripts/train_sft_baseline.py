@@ -21,10 +21,12 @@ Usage:
 
 import argparse
 import gc
+import glob
 import json
 import os
 import random
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -38,6 +40,10 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 from tqdm import tqdm
+
+# Hash-based split (shared with exp_006)
+sys.path.insert(0, os.path.dirname(__file__))
+from utils.split import assign_split, split_data
 
 # ---------------------------------------------------------------------------
 # Prompt and eval (reused from Phase 1a)
@@ -217,7 +223,7 @@ def generate_trajectories(rl_dir, tokenizer, pool, n_objectives, n_generate, see
 # Step 2: SFT training
 # ---------------------------------------------------------------------------
 
-def prepare_sft_dataset(trajectories, tokenizer, max_length=4096):
+def prepare_sft_dataset(trajectories, tokenizer, max_length=6144):
     """Convert perfect trajectories to SFT training format."""
     perfect = [t for t in trajectories if t["is_perfect"]]
     print(f"Using {len(perfect)} perfect trajectories for SFT")
@@ -293,6 +299,84 @@ def train_sft(base_dir, dataset, output_dir, tokenizer, num_epochs=2, batch_size
 
 
 # ---------------------------------------------------------------------------
+# Pooled data loading (reused from exp_006_stage1_sft.py)
+# ---------------------------------------------------------------------------
+
+def truncate_after_last_answer(text):
+    """Truncate text after the last </answer> tag to remove garbage."""
+    match = list(re.finditer(r"</answer>", text))
+    if match:
+        return text[:match[-1].end()]
+    return text
+
+
+def load_and_merge_sft_data(data_dir):
+    """Load and merge sft_data_N*.json files from data_dir."""
+    pattern = os.path.join(data_dir, "sft_data_N*.json")
+    files = sorted(glob.glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"No SFT data files found matching {pattern}")
+
+    all_data = []
+    truncated_count = 0
+    for f in files:
+        m = re.search(r"sft_data_N(\d+)\.json$", os.path.basename(f))
+        if not m:
+            print(f"  [skip] {os.path.basename(f)}: cannot parse N value")
+            continue
+        n_val = int(m.group(1))
+        with open(f) as fh:
+            items = json.load(fh)
+            for item in items:
+                key = "assistant_content" if "assistant_content" in item else "response"
+                if key in item:
+                    original = item[key]
+                    item[key] = truncate_after_last_answer(original)
+                    if len(item[key]) < len(original):
+                        truncated_count += 1
+                item["_n_value"] = n_val
+            print(f"  {os.path.basename(f)}: {len(items)} samples (N={n_val})")
+            all_data.extend(items)
+
+    print(f"Total merged SFT samples: {len(all_data)} ({truncated_count} truncated)")
+    return all_data
+
+
+def prepare_pooled_sft_dataset(data, tokenizer, max_length=6144):
+    """Convert pooled SFT data (train split only) to tokenized dataset."""
+    texts = []
+    skipped = 0
+    for item in data:
+        user = item.get("user_content") or item.get("prompt") or item.get("input", "")
+        assistant = item.get("assistant_content") or item.get("response") or item.get("output", "")
+        if not user or not assistant:
+            skipped += 1
+            continue
+        messages = [
+            {"role": "user", "content": user},
+            {"role": "assistant", "content": assistant},
+        ]
+        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        texts.append(text)
+
+    if skipped:
+        print(f"WARNING: skipped {skipped} items with empty fields")
+
+    def tokenize_fn(examples):
+        return tokenizer(
+            examples["text"],
+            truncation=True,
+            max_length=max_length,
+            padding=False,
+        )
+
+    dataset = Dataset.from_dict({"text": texts})
+    dataset = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+    print(f"Pooled SFT dataset: {len(dataset)} samples (max_length={max_length})")
+    return dataset
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -308,10 +392,15 @@ def main():
                         help="Number of objectives per sample")
     parser.add_argument("--num_epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--max_seq_length", type=int, default=6144,
+                        help="Max sequence length for tokenization")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dry_run", action="store_true",
                         help="Generate 20 trajectories, train 1 epoch")
+    parser.add_argument("--pooled_data_dir", type=str, default=None,
+                        help="Path to pooled SFT data dir (e.g. artifacts/phase1d_v2_data). "
+                             "When set, loads sft_data_N*.json instead of generating from RL model.")
     args = parser.parse_args()
 
     if args.dry_run:
@@ -321,51 +410,67 @@ def main():
 
     t0 = time.time()
 
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(args.rl_dir, trust_remote_code=True)
+    # Load tokenizer (from base model for pooled mode, from RL model otherwise)
+    tokenizer_path = args.base_dir if args.pooled_data_dir else args.rl_dir
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Load QA pool
-    print("Loading QA pool...")
-    pool = load_qa_pool(args.cache_dir, args.seed)
-    print(f"QA pool: {len(pool)} items")
+    if args.pooled_data_dir:
+        # === Pooled SFT mode: load pre-generated data from sft_data_N*.json ===
+        print(f"=== Pooled SFT mode: loading from {args.pooled_data_dir} ===")
+        raw_data = load_and_merge_sft_data(args.pooled_data_dir)
 
-    # Step 1: Generate trajectories
-    trajectories = generate_trajectories(
-        args.rl_dir, tokenizer, pool, args.n_objectives,
-        args.n_generate, args.seed, args.device)
+        # Hash-based split — keep train only (same split as 3B exp_006)
+        splits = split_data(raw_data, prompt_key="user_content", seed=args.seed)
+        print(f"Hash split (seed={args.seed}): "
+              f"train={len(splits['train'])}, val={len(splits['val'])}, test={len(splits['test'])}")
 
-    # Save trajectories
-    traj_path = os.path.join(os.path.dirname(args.output_dir), "sft_trajectories_n2.json")
-    os.makedirs(os.path.dirname(traj_path), exist_ok=True)
-    with open(traj_path, "w") as f:
-        json.dump({
-            "config": {"n_generate": args.n_generate, "n_objectives": args.n_objectives},
-            "stats": {
-                "total": len(trajectories),
-                "perfect": sum(1 for t in trajectories if t["is_perfect"]),
-                "perfect_rate": sum(1 for t in trajectories if t["is_perfect"]) / len(trajectories),
-            },
-            "trajectories": trajectories,
-        }, f, indent=2, ensure_ascii=False)
-    print(f"Trajectories saved to {traj_path}")
+        dataset = prepare_pooled_sft_dataset(
+            splits["train"], tokenizer, max_length=args.max_seq_length)
 
-    # Step 2: Prepare SFT dataset
-    perfect_trajs = [t for t in trajectories if t["is_perfect"]]
-    if len(perfect_trajs) < 10:
-        print(f"WARNING: Only {len(perfect_trajs)} perfect trajectories. Using all trajectories with EM>0 instead.")
-        perfect_trajs = [t for t in trajectories if t["total_em"] > 0]
-        if len(perfect_trajs) < 5:
-            print("ERROR: Not enough usable trajectories. Aborting SFT training.")
-            return
+    else:
+        # === Original mode: generate from RL model ===
+        # Load QA pool
+        print("Loading QA pool...")
+        pool = load_qa_pool(args.cache_dir, args.seed)
+        print(f"QA pool: {len(pool)} items")
 
-    dataset = prepare_sft_dataset(
-        [t for t in trajectories if t["is_perfect"]] if len(perfect_trajs) >= 10
-        else perfect_trajs,
-        tokenizer)
+        # Step 1: Generate trajectories
+        trajectories = generate_trajectories(
+            args.rl_dir, tokenizer, pool, args.n_objectives,
+            args.n_generate, args.seed, args.device)
 
-    # Step 3: Train
+        # Save trajectories
+        traj_path = os.path.join(os.path.dirname(args.output_dir), "sft_trajectories_n2.json")
+        os.makedirs(os.path.dirname(traj_path), exist_ok=True)
+        with open(traj_path, "w") as f:
+            json.dump({
+                "config": {"n_generate": args.n_generate, "n_objectives": args.n_objectives},
+                "stats": {
+                    "total": len(trajectories),
+                    "perfect": sum(1 for t in trajectories if t["is_perfect"]),
+                    "perfect_rate": sum(1 for t in trajectories if t["is_perfect"]) / len(trajectories),
+                },
+                "trajectories": trajectories,
+            }, f, indent=2, ensure_ascii=False)
+        print(f"Trajectories saved to {traj_path}")
+
+        # Step 2: Prepare SFT dataset
+        perfect_trajs = [t for t in trajectories if t["is_perfect"]]
+        if len(perfect_trajs) < 10:
+            print(f"WARNING: Only {len(perfect_trajs)} perfect trajectories. Using all trajectories with EM>0 instead.")
+            perfect_trajs = [t for t in trajectories if t["total_em"] > 0]
+            if len(perfect_trajs) < 5:
+                print("ERROR: Not enough usable trajectories. Aborting SFT training.")
+                return
+
+        dataset = prepare_sft_dataset(
+            [t for t in trajectories if t["is_perfect"]] if len(perfect_trajs) >= 10
+            else perfect_trajs,
+            tokenizer, max_length=args.max_seq_length)
+
+    # Train
     train_sft(args.base_dir, dataset, args.output_dir, tokenizer,
               num_epochs=args.num_epochs, lr=args.lr, device=args.device)
 
