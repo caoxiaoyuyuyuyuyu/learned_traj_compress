@@ -193,8 +193,17 @@ def score_item(generated_text, gold_answers, n_generated_tokens, max_new_tokens)
 
 
 @torch.no_grad()
-def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096):
-    """Generate responses and compute EM for each test item."""
+def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096,
+                   bad_words_ids=None, save_partial_path=None):
+    """Generate responses and compute EM for each test item.
+
+    Args:
+        bad_words_ids: Optional list of token-id sequences to suppress during
+            generation (passed to model.generate). E.g. [[27,1836]] bans the
+            bigram "<search".
+        save_partial_path: If set, write partial results to this JSON path
+            every 10 prompts for crash resilience.
+    """
     results = []
     input_lens = []
     input_truncated_count = 0
@@ -217,8 +226,7 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096):
         if input_len >= tok_cap:
             input_truncated_count += 1
 
-        outputs = model.generate(
-            **inputs,
+        gen_kwargs = dict(
             max_new_tokens=max_new_tokens,
             do_sample=False,
             temperature=None,
@@ -227,6 +235,9 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096):
             stop_strings=["</answer>"],
             tokenizer=tokenizer,
         )
+        if bad_words_ids is not None:
+            gen_kwargs["bad_words_ids"] = bad_words_ids
+        outputs = model.generate(**inputs, **gen_kwargs)
         generated_ids = outputs[0][input_len:]
         n_generated = int(generated_ids.shape[0])
         generated = tokenizer.decode(generated_ids, skip_special_tokens=True)
@@ -256,7 +267,12 @@ def evaluate_model(model, tokenizer, test_items, max_new_tokens=4096):
             print(f"  [{i+1}/{len(test_items)}] "
                   f"em_full={scored['em_full']:.0f} "
                   f"em_partial={scored['em_partial']:.3f} "
-                  f"trunc={scored['truncated']}")
+                  f"trunc={scored['truncated']}", flush=True)
+
+        # Crash resilience: save partial results every 10 prompts
+        if save_partial_path and ((i + 1) % 10 == 0):
+            with open(save_partial_path, "w") as _pf:
+                json.dump({"partial": True, "n_done": i + 1, "results": results}, _pf)
 
     # Input length distribution
     if input_lens:
@@ -298,6 +314,9 @@ def main():
     parser.add_argument("--max_new_tokens", type=int, default=4096)
     parser.add_argument("--n_values", type=int, nargs="+", default=[2, 4, 8],
                         help="Which N values to evaluate on")
+    parser.add_argument("--suppress_search_tokens", action="store_true",
+                        help="Suppress <search>/<information> bigrams via bad_words_ids "
+                             "(exp_008: behavioral mismatch test)")
     args = parser.parse_args()
 
     # ── fail-fast: echo cmdline + validate adapter flags ──
@@ -313,6 +332,15 @@ def main():
 
     t0 = time.time()
     os.makedirs(args.output_dir, exist_ok=True)
+
+    # ── Search token suppression (exp_008) ──
+    bad_words_ids = None
+    if args.suppress_search_tokens:
+        # Bigram bad_words_ids for Qwen2.5-3B tokenizer:
+        # Block "<search", "< search", "<information", "< information"
+        # Token IDs: 27="<", 522="<" (with space prefix), 1836="search", 25069="information"
+        bad_words_ids = [[27, 1836], [522, 1836], [27, 25069], [522, 25069]]
+        print(f"[SUPPRESSION] bad_words_ids={bad_words_ids}")
 
     # Load test prompts
     print("=== Loading test prompts ===")
@@ -333,8 +361,12 @@ def main():
             continue
 
         print(f"\n=== Evaluating on N={n} ({len(test_prompts[n])} prompts) ===")
+        partial_path = os.path.join(args.output_dir,
+                                    f"eval_{args.model_name}_N{n}_partial.json")
         results, extra = evaluate_model(model, tokenizer, test_prompts[n],
-                                        max_new_tokens=args.max_new_tokens)
+                                        max_new_tokens=args.max_new_tokens,
+                                        bad_words_ids=bad_words_ids,
+                                        save_partial_path=partial_path)
 
         em_full_list = [r["em_full"] for r in results]
         em_partial_list = [r["em_partial"] for r in results]
@@ -368,6 +400,8 @@ def main():
             "tokenizer": getattr(tokenizer, "name_or_path", tokenizer_path),
             "do_sample": False,
             "commit": _git_commit_sha(),
+            "suppress_search_tokens": args.suppress_search_tokens,
+            "bad_words_ids": bad_words_ids,
         },
         "summary": summary,
         "details": all_results,
