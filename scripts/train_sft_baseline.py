@@ -253,14 +253,17 @@ def prepare_sft_dataset(trajectories, tokenizer, max_length=6144):
 
 
 def train_sft(base_dir, dataset, output_dir, tokenizer, num_epochs=2, batch_size=1,
-              gradient_accumulation=4, lr=2e-5, device="cuda"):
+              gradient_accumulation=4, lr=2e-5, gradient_checkpointing=True,
+              bf16=True, device="cuda"):
     """Train SFT baseline."""
     print(f"\n=== SFT Training ===")
     print(f"Dataset size: {len(dataset)}")
     print(f"Epochs: {num_epochs}, effective batch: {batch_size * gradient_accumulation}")
+    print(f"gradient_checkpointing={gradient_checkpointing}, bf16={bf16}")
 
     model = AutoModelForCausalLM.from_pretrained(
-        base_dir, torch_dtype=torch.bfloat16, device_map=device, trust_remote_code=True)
+        base_dir, torch_dtype=torch.bfloat16 if bf16 else torch.float32,
+        device_map=device, trust_remote_code=True)
 
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -273,8 +276,8 @@ def train_sft(base_dir, dataset, output_dir, tokenizer, num_epochs=2, batch_size
         logging_steps=10,
         save_strategy="epoch",
         save_total_limit=1,
-        bf16=True,
-        gradient_checkpointing=True,
+        bf16=bf16,
+        gradient_checkpointing=gradient_checkpointing,
         report_to="none",
         dataloader_pin_memory=False,
     )
@@ -394,6 +397,18 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--max_seq_length", type=int, default=6144,
                         help="Max sequence length for tokenization")
+    parser.add_argument("--batch_size", type=int, default=1,
+                        help="Per-device train batch size")
+    parser.add_argument("--grad_accum", type=int, default=4,
+                        help="Gradient accumulation steps")
+    parser.add_argument("--gradient_checkpointing", action="store_true", default=True,
+                        help="Enable gradient checkpointing (default: True)")
+    parser.add_argument("--no_gradient_checkpointing", action="store_false", dest="gradient_checkpointing",
+                        help="Disable gradient checkpointing")
+    parser.add_argument("--bf16", action="store_true", default=True,
+                        help="Use bf16 mixed precision (default: True)")
+    parser.add_argument("--no_bf16", action="store_false", dest="bf16",
+                        help="Disable bf16")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dry_run", action="store_true",
@@ -472,7 +487,10 @@ def main():
 
     # Train
     train_sft(args.base_dir, dataset, args.output_dir, tokenizer,
-              num_epochs=args.num_epochs, lr=args.lr, device=args.device)
+              num_epochs=args.num_epochs, batch_size=args.batch_size,
+              gradient_accumulation=args.grad_accum, lr=args.lr,
+              gradient_checkpointing=args.gradient_checkpointing,
+              bf16=args.bf16, device=args.device)
 
     elapsed = time.time() - t0
     print(f"\nTotal elapsed: {elapsed:.0f}s ({elapsed/60:.1f}min)")
