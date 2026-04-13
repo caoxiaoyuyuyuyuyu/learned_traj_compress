@@ -56,15 +56,17 @@
 
   \setlength{\linenumbersep}{1.6cm}
 
-  % Force outer-edge line numbers in twocolumn: left col → left margin, right col → right margin.
-  % The line number box is zero-width, placed at the left edge of the current column.
-  % Left col: number goes left into the margin (standard \makeLineNumberLeft).
-  % Right col: skip across \columnwidth + sep to reach the right page margin.
+  % Force outer-edge line numbers: left margin in single-col and left col,
+  % right margin in right col of twocolumn mode.
   \renewcommand\makeLineNumber{%
-    \if@firstcolumn
-      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
+    \if@twocolumn
+      \if@firstcolumn
+        \hss\linenumberfont\thelinenumber\hskip\linenumbersep
+      \else
+        \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
+      \fi
     \else
-      \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
+      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
     \fi
   }
 
