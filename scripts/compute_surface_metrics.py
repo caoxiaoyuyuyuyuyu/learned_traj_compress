@@ -99,7 +99,18 @@ def main():
     artifacts = Path("/root/autodl-tmp/learned_traj_compress/artifacts")
 
     # Load data
-    print("Loading eval data...")
+    full_output_path = artifacts / "w1_surface_metrics" / "student_full_outputs.json"
+    if full_output_path.exists():
+        print(f"Loading full student outputs from {full_output_path}...")
+        full_data = json.loads(full_output_path.read_text())
+        student_lookup = {r["prompt_idx"]: r for r in full_data["results"]}
+        use_full = True
+    else:
+        print("WARNING: Full student outputs not found. Using truncated (500 char) eval data.")
+        print(f"  Run w1_rerun_inference.py first for accurate BLEU/ROUGE.")
+        use_full = False
+
+    print("Loading eval data (for task metrics)...")
     eval_data = json.loads((artifacts / "exp_006_eval" / "eval_sft_shared.json").read_text())
     print("Loading teacher trajectories...")
     teacher_data = json.loads((artifacts / "phase1d_v2_data" / "raw_trajectories_N8.json").read_text())
@@ -117,6 +128,7 @@ def main():
     # Process student eval items (N=8)
     eval_items = eval_data["details"]["N8"]
     print(f"Processing {len(eval_items)} eval items (N=8)...")
+    print(f"  Using {'FULL' if use_full else 'TRUNCATED'} student outputs for surface metrics")
 
     student_texts_raw = []
     teacher_texts_raw = []
@@ -132,7 +144,10 @@ def main():
             continue
         matched_count += 1
 
-        student_gen = item["generated_text"]
+        if use_full and pidx in student_lookup:
+            student_gen = student_lookup[pidx]["generated_text"]
+        else:
+            student_gen = item["generated_text"]
         teacher_resp = teacher_lookup[pidx]["full_assistant"]
 
         student_texts_raw.append(student_gen)
