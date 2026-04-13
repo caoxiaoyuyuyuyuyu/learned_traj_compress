@@ -1,7 +1,7 @@
 \section{Distillation Attempt and Failure Analysis}
 \label{sec:distillation}
 
-The SVD analysis (\S\ref{sec:svd}) reveals a geometric gap between RL and SFT weight changes, but geometry alone does not establish a causal link to distillation failure. In this section, we test whether preference-based learning (DPO) can close the gap, uncover a truncation confound that initially masked the true effect size, and examine behavioral evidence for why the student fails.
+Phase~1 narrowed the distillation failure to a geometric gap in weight space that SFT does not close. We now test whether this gap reflects a causal bottleneck---and if so, where it lies. The diagnostic protocol's second phase proceeds by elimination: rule out evaluation artifacts (\S\ref{sec:truncation}), capacity (\S\ref{sec:capacity}), and strategy degradation (\S\ref{sec:suppression}) before localizing the failure to execution capability (\S\ref{sec:causal}).
 
 %--------------------------------------------------------------
 \subsection{Experimental Design}
@@ -25,6 +25,7 @@ Table~\ref{tab:eval_matrix} reports the full evaluation matrix. Under fair compa
 \begin{table}[t]
 \centering
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
 Model & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
@@ -37,7 +38,8 @@ DPO $N\!=\!8$ & 0.130 & 0.082 & 0.035 \\
 \midrule
 RL teacher (7B) & 0.59 & 0.54 & 0.455 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \caption{em\_partial across distillation methods and evaluation conditions ($\text{max\_new\_tokens}=4096$). \textsuperscript{$\ddagger$}The 7B full-rank SFT uses pooled training on $N \in \{2,4,8\}$ (same data and inclusion criteria as the 3B student). The 7B--3B gap accounts for \emph{at most} $\approx$12--14\% of the teacher--student performance gap, remarkably stable across $N$ (\S\ref{sec:capacity}). DPO variants show marginal gains; best $N\!=\!8$: DPO$_{N=8}$ at $+1.0$pp ($p = 0.163$).}
 \label{tab:eval_matrix}
 \end{table}
@@ -62,6 +64,7 @@ An important methodological episode shaped our analysis. An earlier evaluation u
 \begin{table}[t]
 \centering
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 & em\_partial & trunc.\ rate & $\Delta$ vs SFT & $p$ \\
@@ -74,7 +77,8 @@ An important methodological episode shaped our analysis. An earlier evaluation u
 \quad SFT shared & 0.025 & 83.2\% & --- & --- \\
 \quad DPO $N\!=\!8$ & 0.035 & $\sim$84\% & $+1.0$pp & $0.163$ \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \caption{Truncation confound at $N\!=\!8$. The initial SFT evaluation at 2048 tokens truncated 93.6\% of outputs, yielding a deceptively significant DPO advantage. Extending SFT's budget to 4096 tokens reduced truncation to 83.2\%, lifted em\_partial from 0.011 to 0.025, and revealed that the DPO advantage is not significant. \textsuperscript{$\dagger$}DPO was evaluated at $\text{max\_new\_tokens}=4096$ in both conditions; only the SFT budget differed.}
 \label{tab:truncation_confound}
 \end{table}
@@ -104,6 +108,7 @@ The observational evidence in \S\ref{sec:suppression} raises a natural intervent
 \begin{table}[t]
 \centering
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
 & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
@@ -115,7 +120,8 @@ $p$ (bootstrap) & ${<}0.0001$ & ${<}0.0001$ & ${<}0.0001$ \\
 \midrule
 RL teacher\textsuperscript{$\dagger$} & 0.59 & 0.54 & 0.455 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \caption{Effect of providing oracle retrieval results at inference time. With real search results injected, the SFT student recovers from near-zero to near-teacher performance. Paired bootstrap, 10{,}000 resamples. \textsuperscript{$\dagger$}Teacher evaluated on a different prompt set; direct comparison is not valid.}
 \label{tab:oracle_api}
 \end{table}
@@ -123,11 +129,12 @@ RL teacher\textsuperscript{$\dagger$} & 0.59 & 0.54 & 0.455 \\
 Table~\ref{tab:oracle_api} shows that providing real retrieval results transforms student performance: em\_partial jumps from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$, 95\% CI $[43.8, 50.8]$pp). Truncation drops from $83.2\%$ to $0\%$---the student completes every output when search queries return real passages instead of hallucinated content. This constitutes causal evidence that behavioral mismatch, not capacity limitations alone, drives the distillation failure: the student has learned a viable search strategy but lacks the execution environment to realize it.
 
 \paragraph{Realistic retrieval: BM25.}
-The oracle setting uses teacher passages and thus provides an upper bound. To assess a deployable configuration, we replace oracle retrieval with BM25 (top-4 passages from the same corpus). Table~\ref{tab:bm25} shows that BM25 retrieval recovers a substantial fraction of the oracle gain: em\_partial improves from $0.025$ to $0.147$ at $N\!=\!8$ ($+12.2$pp), with truncation dropping to $0\%$ across all $N$. The BM25 student recovers $14$--$26\%$ of the oracle improvement, with the largest relative gain at $N\!=\!8$ where the no-API baseline is most degraded. The gap between BM25 and oracle ($0.147$ vs.\ $0.498$ at $N\!=\!8$) reflects retrieval quality rather than student capability: the student's queries closely match the teacher's (Jaccard $= 0.95$), but BM25's top-4 recall is substantially lower than oracle injection.
+The oracle setting uses teacher passages and thus provides an upper bound. To assess a deployable configuration, we replace oracle retrieval with BM25 (top-4 passages from the same corpus). Table~\ref{tab:bm25} and Figure~\ref{fig:retrieval_recovery} show that BM25 retrieval recovers a substantial fraction of the oracle gain: em\_partial improves from $0.025$ to $0.147$ at $N\!=\!8$ ($+12.2$pp), with truncation dropping to $0\%$ across all $N$. The BM25 student recovers $14$--$26\%$ of the oracle improvement, with the largest relative gain at $N\!=\!8$ where the no-API baseline is most degraded. The gap between BM25 and oracle ($0.147$ vs.\ $0.498$ at $N\!=\!8$) reflects retrieval quality rather than student capability: the student's queries closely match the teacher's (Jaccard $= 0.95$), but BM25's top-4 recall is substantially lower than oracle injection.
 
 \begin{table}[t]
 \centering
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
 & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
@@ -138,10 +145,18 @@ SFT + oracle API & \textbf{0.530} & \textbf{0.521} & \textbf{0.498} \\
 \midrule
 RL teacher & 0.59 & 0.54 & 0.455 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \caption{em\_partial under different retrieval conditions. BM25 retrieval recovers a meaningful fraction of the oracle gain ($+9.2$pp at $N\!=\!2$, $+12.2$pp at $N\!=\!8$) and eliminates truncation entirely ($0\%$ across all $N$). The remaining gap to oracle reflects retrieval quality, not student strategy.}
 \label{tab:bm25}
 \end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{retrieval_recovery.pdf}
+\caption{em\_partial under different retrieval conditions. Providing oracle retrieval results at inference time recovers the SFT student from near-zero to near-teacher performance across all $N$, while even a standard BM25 backend yields meaningful gains. The RL teacher (hatched) is shown for reference.}
+\label{fig:retrieval_recovery}
+\end{figure}
 
 \paragraph{Query fidelity and search behavior.}
 The student averages exactly $1.0$ search per prompt across all 507 test cases. Crucially, this is not a simplification of the teacher's strategy: analysis of the teacher's training trajectories reveals that $>$95\% of teacher responses also contain a single search round (mean searches: $1.04$ at $N\!=\!2$, $1.01$ at $N\!=\!4$, $1.06$ at $N\!=\!8$), because the prompt prefix already includes the first retrieval result. Furthermore, the student's search queries closely match the teacher's: mean Jaccard similarity is $0.95$ (median $= 1.0$, $n = 507$). SFT thus faithfully transfers both the search pattern and the query formulation---the bottleneck is purely the absence of a retrieval backend, not a failure of strategy learning.
@@ -163,4 +178,11 @@ The analyses in this section converge on a consistent diagnostic:
     \item \textbf{Truncation masks and distorts the comparison.} At insufficient generation budgets, truncation disproportionately penalizes the more verbose model (SFT), creating a spurious advantage for DPO. After controlling for this confound, the DPO advantage shrinks from $+2.4$pp ($p < 0.001$) to $+1.0$pp ($p = 0.163$)---both methods fail for the same reason.
 \end{enumerate}
 
-The oracle retrieval experiment (\S\ref{sec:causal}) elevates behavioral mismatch from observational hypothesis to a causally supported finding, and the BM25 experiment confirms that even a standard retrieval backend recovers meaningful performance ($+12.2$pp at $N\!=\!8$). Notably, the student faithfully reproduces the teacher's search strategy (Jaccard $= 0.95$; \S\ref{sec:causal}), confirming that the bottleneck is execution capability rather than strategy learning. A 7B pooled SFT (\S\ref{sec:capacity}) quantifies the capacity contribution at \emph{at most} $\approx$12--14\% of the teacher--student gap---a minor but consistent factor across all $N$ values, while behavioral mismatch accounts for the remaining $\approx$86--88\%. We note that capacity and behavioral mismatch may interact non-additively, and additional factors (e.g., training-method differences) may also contribute; these percentages should be interpreted as approximate decompositions rather than exact attributions.
+The oracle retrieval experiment (\S\ref{sec:causal}) elevates behavioral mismatch from observational hypothesis to a causally supported finding, and the BM25 experiment confirms that even a standard retrieval backend recovers meaningful performance ($+12.2$pp at $N\!=\!8$). Notably, the student faithfully reproduces the teacher's search strategy (Jaccard $= 0.95$; \S\ref{sec:causal}), confirming that the bottleneck is execution capability rather than strategy learning. A 7B pooled SFT (\S\ref{sec:capacity}) quantifies the capacity contribution at \emph{at most} $\approx$12--14\% of the teacher--student gap---a minor but consistent factor across all $N$ values, while behavioral mismatch accounts for the remaining $\approx$86--88\% (Figure~\ref{fig:gap_decomposition}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{gap_decomposition.pdf}
+\caption{Decomposition of the teacher--student performance gap across objective counts. Capacity (7B vs.\ 3B SFT) accounts for a stable ${\sim}$12--14\%, while behavioral mismatch dominates at ${\sim}$86--88\%.}
+\label{fig:gap_decomposition}
+\end{figure} We note that capacity and behavioral mismatch may interact non-additively, and additional factors (e.g., training-method differences) may also contribute; these percentages should be interpreted as approximate decompositions rather than exact attributions.
