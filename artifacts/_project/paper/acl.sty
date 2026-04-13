@@ -57,13 +57,14 @@
   \setlength{\linenumbersep}{1.6cm}
 
   % Force outer-edge line numbers in twocolumn: left col → left margin, right col → right margin.
-  % lineno's [switch] relies on \@mparswitch which geometry/article resets in one-sided mode.
-  % Instead, override \makeLineNumber to check \if@firstcolumn directly.
+  % The line number box is zero-width, placed at the left edge of the current column.
+  % Left col: number goes left into the margin (standard \makeLineNumberLeft).
+  % Right col: skip across \columnwidth + sep to reach the right page margin.
   \renewcommand\makeLineNumber{%
     \if@firstcolumn
       \hss\linenumberfont\thelinenumber\hskip\linenumbersep
     \else
-      \hskip\linenumbersep\linenumberfont\thelinenumber\hss
+      \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
     \fi
   }
 
