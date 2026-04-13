@@ -56,18 +56,17 @@
 
   \setlength{\linenumbersep}{1.6cm}
 
-  % Force outer-edge line numbers: left margin in single-col and left col,
-  % right margin in right col of twocolumn mode.
+  % Force outer-edge line numbers.  Detect single-col spans (abstract header)
+  % via \linewidth > 1.5\columnwidth; those get left-margin numbers.
+  % In true two-column text, left col → left margin, right col → right margin.
   \renewcommand\makeLineNumber{%
-    \if@twocolumn
-      \if@firstcolumn
-        \hss\linenumberfont\thelinenumber\hskip\linenumbersep
-      \else
-        \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
-      \fi
-    \else
+    \ifdim\linewidth>1.5\columnwidth
       \hss\linenumberfont\thelinenumber\hskip\linenumbersep
-    \fi
+    \else\if@firstcolumn
+      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
+    \else
+      \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
+    \fi\fi
   }
 
   % Bug: An equation with $$ ... $$ isn't numbered, nor is the previous line.
