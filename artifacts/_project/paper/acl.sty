@@ -56,22 +56,29 @@
 
   \setlength{\linenumbersep}{1.6cm}
 
-  % Suppress line numbers inside abstract (single-col header produced by
-  % \twocolumn[...] where \linewidth/\if@firstcolumn detection fails).
+  % Flag-based detection for abstract (single-col span produced by
+  % \twocolumn[...] where \if@firstcolumn is unreliable).
+  \newif\ifmd@inabstract
+  \md@inabstractfalse
   \AtBeginDocument{%
     \let\mdorig@abstract\abstract
     \let\mdorig@endabstract\endabstract
-    \renewenvironment{abstract}{\nolinenumbers\mdorig@abstract}{\mdorig@endabstract\linenumbers}%
+    \renewenvironment{abstract}%
+      {\md@inabstracttrue\mdorig@abstract}%
+      {\mdorig@endabstract\md@inabstractfalse}%
   }
 
-  % Outer-edge line numbers for two-column body:
-  % left col → left margin, right col → right margin.
+  % Outer-edge line numbers.
+  % Abstract (single-col): always left margin.
+  % Two-column body: left col → left margin, right col → right margin.
   \renewcommand\makeLineNumber{%
-    \if@firstcolumn
+    \ifmd@inabstract
+      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
+    \else\if@firstcolumn
       \hss\linenumberfont\thelinenumber\hskip\linenumbersep
     \else
       \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
-    \fi
+    \fi\fi
   }
 
   % Bug: An equation with $$ ... $$ isn't numbered, nor is the previous line.
