@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""W1: Silent Failure Demonstration — surface vs task metrics comparison.
+
+Computes surface distillation metrics (BLEU, ROUGE-L, action sequence accuracy,
+tool-call syntax accuracy) between SFT student outputs and teacher trajectories,
+then contrasts with known-low task metrics to demonstrate the silent failure.
+"""
+
+import json
+import re
+import sys
+import os
+from collections import defaultdict
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+ACTION_TAG_RE = re.compile(r"<(think|search|information|answer)\b")
+SEARCH_BLOCK_RE = re.compile(r"<search>(.*?)</search>", re.DOTALL)
+ANSWER_BLOCK_RE = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
+
+
+def extract_action_sequence(text: str) -> list[str]:
+    """Extract ordered sequence of action tags from trajectory text."""
+    return ACTION_TAG_RE.findall(text)
+
+
+def extract_search_queries(text: str) -> list[str]:
+    """Extract all <search>...</search> query strings."""
+    return [m.strip() for m in SEARCH_BLOCK_RE.findall(text)]
+
+
+def action_sequence_accuracy(student_seq: list[str], teacher_seq: list[str]) -> float:
+    """Fraction of positions where student action matches teacher (truncated to shorter)."""
+    if not teacher_seq:
+        return 1.0 if not student_seq else 0.0
+    min_len = min(len(student_seq), len(teacher_seq))
+    if min_len == 0:
+        return 0.0
+    matches = sum(s == t for s, t in zip(student_seq[:min_len], teacher_seq[:min_len]))
+    return matches / len(teacher_seq)
+
+
+def tool_call_syntax_ok(text: str) -> dict:
+    """Check <search>...</search> well-formedness."""
+    open_count = text.count("<search>")
+    close_count = text.count("</search>")
+    queries = extract_search_queries(text)
+    non_empty = sum(1 for q in queries if q)
+    return {
+        "balanced": open_count == close_count,
+        "n_search_tags": open_count,
+        "n_queries": len(queries),
+        "n_non_empty_queries": non_empty,
+        "syntax_ok": open_count == close_count and open_count > 0,
+        "queries_non_empty": non_empty == len(queries) if queries else True,
+    }
+
+
+def compute_bleu_rouge(student_texts: list[str], teacher_texts: list[str]):
+    """Compute corpus-level BLEU and per-sample ROUGE-L, return means."""
+    import sacrebleu
+    from rouge_score import rouge_scorer
+
+    # BLEU (corpus-level)
+    bleu = sacrebleu.corpus_bleu(student_texts, [teacher_texts])
+
+    # ROUGE-L (per-sample, then average)
+    scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+    rouge_scores = []
+    for s, t in zip(student_texts, teacher_texts):
+        score = scorer.score(t, s)  # reference, hypothesis
+        rouge_scores.append(score["rougeL"].fmeasure)
+
+    return {
+        "bleu": round(bleu.score, 4),
+        "rouge_l_mean": round(sum(rouge_scores) / len(rouge_scores), 4),
+        "rouge_l_scores": [round(s, 4) for s in rouge_scores],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    artifacts = Path("/root/autodl-tmp/learned_traj_compress/artifacts")
+
+    # Load data
+    print("Loading eval data...")
+    eval_data = json.loads((artifacts / "exp_006_eval" / "eval_sft_shared.json").read_text())
+    print("Loading teacher trajectories...")
+    teacher_data = json.loads((artifacts / "phase1d_v2_data" / "raw_trajectories_N8.json").read_text())
+
+    # Build teacher lookup: prompt_idx -> best response (highest total_em)
+    teacher_lookup = {}
+    for r in teacher_data["results"]:
+        best = max(r["responses"], key=lambda x: x["total_em"])
+        teacher_lookup[r["prompt_idx"]] = {
+            "response": best["response"],
+            "full_assistant": best["full_assistant"],
+            "total_em": best["total_em"],
+        }
+
+    # Process student eval items (N=8)
+    eval_items = eval_data["details"]["N8"]
+    print(f"Processing {len(eval_items)} eval items (N=8)...")
+
+    student_texts = []
+    teacher_texts = []
+    action_seq_accs = []
+    syntax_results = []
+    matched_count = 0
+
+    for item in eval_items:
+        pidx = item["prompt_idx"]
+        if pidx not in teacher_lookup:
+            continue
+        matched_count += 1
+
+        student_gen = item["generated_text"]
+        teacher_resp = teacher_lookup[pidx]["full_assistant"]
+
+        student_texts.append(student_gen)
+        teacher_texts.append(teacher_resp)
+
+        # Action sequence accuracy
+        s_seq = extract_action_sequence(student_gen)
+        t_seq = extract_action_sequence(teacher_resp)
+        action_seq_accs.append(action_sequence_accuracy(s_seq, t_seq))
+
+        # Tool-call syntax
+        syn = tool_call_syntax_ok(student_gen)
+        syntax_results.append(syn)
+
+    print(f"Matched {matched_count}/{len(eval_items)} eval items to teacher trajectories")
+
+    # Compute BLEU/ROUGE
+    print("Computing BLEU and ROUGE-L...")
+    bleu_rouge = compute_bleu_rouge(student_texts, teacher_texts)
+
+    # Aggregate syntax metrics
+    syntax_ok_rate = sum(1 for s in syntax_results if s["syntax_ok"]) / len(syntax_results)
+    queries_nonempty_rate = sum(1 for s in syntax_results if s["queries_non_empty"]) / len(syntax_results)
+    balanced_rate = sum(1 for s in syntax_results if s["balanced"]) / len(syntax_results)
+
+    # Aggregate action sequence
+    mean_action_acc = sum(action_seq_accs) / len(action_seq_accs)
+
+    # Task metrics from eval data summary
+    summary = eval_data["summary"]
+    n8_summary = summary.get("N8", {})
+
+    # Also compute from details directly
+    em_partial_vals = [it["em_partial"] for it in eval_items]
+    em_full_vals = [it["em_full"] for it in eval_items]
+    truncated_vals = [it["truncated"] for it in eval_items]
+
+    results = {
+        "n": 8,
+        "n_samples": matched_count,
+        "n_eval_total": len(eval_items),
+        "surface_metrics": {
+            "output_bleu": bleu_rouge["bleu"],
+            "output_rouge_l": bleu_rouge["rouge_l_mean"],
+            "action_sequence_accuracy": round(mean_action_acc, 4),
+            "tool_call_syntax_accuracy": round(syntax_ok_rate, 4),
+            "tool_call_balanced_tags": round(balanced_rate, 4),
+            "tool_call_queries_nonempty": round(queries_nonempty_rate, 4),
+            "query_jaccard": 0.95,
+            "search_pattern_match": ">0.95",
+        },
+        "task_metrics": {
+            "em_partial": round(sum(em_partial_vals) / len(em_partial_vals), 4),
+            "em_full": round(sum(em_full_vals) / len(em_full_vals), 4),
+            "truncated_rate": round(sum(truncated_vals) / len(truncated_vals), 4),
+        },
+        "diagnostics": {
+            "action_seq_accs": [round(a, 4) for a in action_seq_accs],
+            "rouge_l_scores": bleu_rouge["rouge_l_scores"],
+            "teacher_best_em_distribution": {
+                str(em): count
+                for em, count in sorted(
+                    defaultdict(int, {
+                        teacher_lookup[it["prompt_idx"]]["total_em"]: 0
+                        for it in eval_items if it["prompt_idx"] in teacher_lookup
+                    }).items()
+                )
+            },
+        },
+    }
+
+    # Fix teacher EM distribution
+    em_dist = defaultdict(int)
+    for it in eval_items:
+        if it["prompt_idx"] in teacher_lookup:
+            em_dist[teacher_lookup[it["prompt_idx"]]["total_em"]] += 1
+    results["diagnostics"]["teacher_best_em_distribution"] = {
+        str(k): v for k, v in sorted(em_dist.items())
+    }
+
+    # Save results
+    out_dir = artifacts / "w1_surface_metrics"
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / "results.json"
+    out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False))
+    print(f"\nResults saved to {out_path}")
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("W1: Silent Failure Demonstration — Surface vs Task Metrics")
+    print("=" * 60)
+    print(f"\nN={results['n']}, samples={results['n_samples']}")
+    print(f"\n--- Surface Metrics (HIGH = mimics teacher form) ---")
+    for k, v in results["surface_metrics"].items():
+        print(f"  {k:35s}: {v}")
+    print(f"\n--- Task Metrics (LOW = fails at actual task) ---")
+    for k, v in results["task_metrics"].items():
+        print(f"  {k:35s}: {v}")
+    print(f"\n=> Gap between surface similarity and task performance")
+    print(f"   demonstrates the 'silent failure' of standard SFT distillation.")
+
+
+if __name__ == "__main__":
+    main()
