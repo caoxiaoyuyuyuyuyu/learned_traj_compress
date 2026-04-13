@@ -1,7 +1,7 @@
 \section{Distillation Attempt and Failure Analysis}
 \label{sec:distillation}
 
-Phase~1 narrowed the distillation failure to a geometric gap in weight space that SFT does not close. We now test whether this gap reflects a causal bottleneck---and if so, where it lies. The diagnostic protocol's second phase proceeds by elimination: rule out evaluation artifacts (\S\ref{sec:truncation}), capacity (\S\ref{sec:capacity}), and strategy degradation (\S\ref{sec:suppression}) before localizing the failure to execution capability (\S\ref{sec:causal}).
+Phase~1 narrowed the distillation failure to a geometric gap in weight space that SFT does not close. We now test whether this gap reflects a causal bottleneck---and if so, where it lies. We first establish the DPO baseline (\S\ref{sec:dpo_results}), then rule out capacity (\S\ref{sec:capacity}) and evaluation artifacts (\S\ref{sec:truncation}), examine behavioral evidence (\S\ref{sec:suppression}), and test the causal hypothesis (\S\ref{sec:causal}).
 
 %--------------------------------------------------------------
 \subsection{Experimental Design}
