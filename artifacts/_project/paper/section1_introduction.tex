@@ -1,22 +1,7 @@
 \section{Introduction}
 \label{sec:intro}
 
-SFT distillation of an RL-trained agent can appear to succeed by format-level tool-call metrics---and still fail catastrophically in deployment. We distill MEM1~\cite{zhou2025mem1}, a Qwen2.5-7B retrieval-augmented QA agent trained with PPO via veRL~\cite{sheng2024verl}, into a Qwen2.5-3B student using 1{,}118 teacher trajectories. Format-level tool-call metrics give high scores---tool-call syntax ($100\%$), balanced XML tags ($100\%$), non-empty search queries ($100\%$), query Jaccard similarity ($0.95$)---all rate this student highly (Table~\ref{tab:silent_failure_demo}). Content-level similarity already warns (BLEU $1.14\%$, ROUGE-L $0.21$), but because the student produces teacher-like \emph{structure}, these content warnings are easy to dismiss as cosmetic noise. This specific blind spot---format compliance masking execution failure---mirrors the ``syntax-only'' tool-call evaluations critiqued by \citet{jhandi2025slm} (\S\ref{sec:related}).
-
-It did not succeed. The student achieves $\text{em\_partial} = 0.025$ at $N\!=\!8$ simultaneous objectives---a 94.5\% drop from the teacher's $0.455$---with 83\% of outputs truncated by hallucinated search traces that consume the generation budget before producing answers. The failure is \emph{silent} at the format/syntax layer: the checks in Table~\ref{tab:silent_failure_demo} all pass while action-sequence accuracy at the token level is only $0.606$. The collapse surfaces only when search calls must return real results, i.e., at pipeline deployment. This is the central danger: an invisible failure that passes format-level tool-call quality gates while content-level warning signs are overridden by teacher-like structure.
-
-Why do richer training signals not help? DPO on matched preference pairs yields $+1.0$pp ($p = 0.163$)---preference learning fails because the problem is not what the student prefers to generate. Scaling from 3B to 7B SFT closes only ${\sim}12$--$14\%$ of the teacher--student gap (\S\ref{sec:capacity}), ruling out capacity as the primary bottleneck.
-
-We introduce a diagnostic protocol that distinguishes \emph{strategy acquisition} from \emph{execution capability}. The key causal test: providing oracle retrieval at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$), with truncation dropping from 83\% to 0\%. Even a simple BM25 retrieval system recovers $+6$--$12$pp. The protocol proceeds by elimination---collapse characterization (\S\ref{sec:framework}), weight geometry analysis (\S\ref{sec:svd}), causal intervention (\S\ref{sec:distillation})---and localizes the failure before deployment (Figure~\ref{fig:framework}).
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{framework_overview.pdf}
-\caption{Overview of the \textsc{MemDistill} diagnostic framework. Phase~1 (top) progressively characterizes the distillation failure through collapse analysis, SVD weight geometry, and activation probing. Phase~2 (middle) tests interventions: DPO preference learning, truncation confound correction, and oracle retrieval. The combined evidence (bottom) attributes ${\sim}87\%$ of the teacher--student gap to behavioral mismatch.}
-\label{fig:framework}
-\end{figure*}
-
-\begin{table}[t]
+\begin{table}[!t]
 \centering
 \small
 \begin{tabular}{lrc}
@@ -31,13 +16,28 @@ Query Jaccard$^{\dagger}$ & $0.95$ & Y \\
 \midrule
 \multicolumn{3}{l}{\emph{Content-level indicators}} \\
 Action sequence accuracy & $0.606$ & N \\
-BLEU (sacrebleu)         & $1.14\%$ & N \\
+BLEU (sacrebleu, 0--100)& $1.14$   & N \\
 ROUGE-L                  & $0.21$ & N \\
 \bottomrule
 \end{tabular}
-\caption{Silent-failure demo on the distillation test set (125 samples). Format-level indicators (top) all rate the student highly and are \emph{misleading} (Y); content-level indicators (bottom) correctly expose the collapse (em\_partial $= 0.025$). $^{\dagger}$Query Jaccard borrowed from the \texttt{exp\_009} strategy analysis (507 samples); all other metrics computed on the 125-sample distillation test set.}
+\caption{Silent-failure demo on the distillation test set (125 samples). Format-level indicators (top) all rate the student highly and are \emph{misleading} (Y); content-level indicators (bottom) expose the collapse (em\_partial $= 0.025$), though to varying degrees---action-sequence accuracy at $0.606$ only \emph{partially exposes} it (still well above the near-zero task performance), while BLEU and ROUGE-L fall to near-floor values that unambiguously warn. $^{\dagger}$Query Jaccard borrowed from the \texttt{exp\_009} strategy analysis (507 samples); all other metrics computed on the 125-sample distillation test set.}
 \label{tab:silent_failure_demo}
 \end{table}
+
+SFT distillation of an RL-trained agent can appear to succeed by format-level tool-call metrics---and still fail catastrophically in deployment. We distill MEM1~\cite{zhou2025mem1}, a Qwen2.5-7B retrieval-augmented QA agent trained with PPO via veRL~\cite{sheng2024verl}, into a Qwen2.5-3B student using 1{,}118 teacher trajectories. Format-level tool-call metrics give high scores---tool-call syntax ($100\%$), balanced XML tags ($100\%$), non-empty search queries ($100\%$), query Jaccard similarity ($0.95$)---all rate this student highly (Table~\ref{tab:silent_failure_demo}). Content-level similarity already warns (BLEU $1.14$ on sacrebleu's 0--100 scale, ROUGE-L $0.21$), but because the student produces teacher-like \emph{structure}, these content warnings are easy to dismiss as cosmetic noise. This specific blind spot---format compliance masking execution failure---mirrors the ``syntax-only'' tool-call evaluations critiqued by \citet{jhandi2025slm} (\S\ref{sec:related}).
+
+It did not succeed. The student achieves $\text{em\_partial} = 0.025$ at $N\!=\!8$ simultaneous objectives---a 94.5\% drop from the teacher's $0.455$---with 83\% of outputs truncated by hallucinated search traces that consume the generation budget before producing answers. The failure is \emph{silent} at the format/syntax layer: the checks in Table~\ref{tab:silent_failure_demo} all pass while action-sequence accuracy at the token level is only $0.606$. The collapse surfaces only when search calls must return real results, i.e., at pipeline deployment. This is the central danger: an invisible failure that passes format-level tool-call quality gates while content-level warning signs are overridden by teacher-like structure.
+
+Why do richer training signals not help? DPO on matched preference pairs yields $+1.0$pp ($p = 0.163$)---preference learning fails because the problem is not what the student prefers to generate. Scaling from 3B to 7B SFT closes only ${\sim}12$--$14\%$ of the teacher--student gap (\S\ref{sec:capacity}), ruling out capacity as the primary bottleneck.
+
+We introduce a diagnostic protocol that distinguishes \emph{strategy acquisition} from \emph{execution capability}. The key causal test: providing oracle retrieval at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$), with truncation dropping from 83\% to 0\%. Even a simple BM25 retrieval system recovers $+6$--$12$pp. The protocol proceeds by elimination---collapse characterization (\S\ref{sec:framework}), weight geometry analysis (\S\ref{sec:svd}), causal intervention (\S\ref{sec:distillation})---and localizes the failure before deployment (Figure~\ref{fig:framework}).
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{framework_overview.pdf}
+\caption{Overview of the \textsc{MemDistill} diagnostic framework. Phase~1 (top) progressively characterizes the distillation failure through collapse analysis, SVD weight geometry, and activation probing. Phase~2 (middle) tests interventions: DPO preference learning, truncation confound correction, and oracle retrieval. The combined evidence (bottom) attributes ${\sim}87\%$ of the teacher--student gap to behavioral mismatch.}
+\label{fig:framework}
+\end{figure*}
 
 \paragraph{Contributions.}
 \begin{itemize}[leftmargin=*,nosep]
