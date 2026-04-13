@@ -56,17 +56,22 @@
 
   \setlength{\linenumbersep}{1.6cm}
 
-  % Force outer-edge line numbers.  Detect single-col spans (abstract header)
-  % via \linewidth > 1.5\columnwidth; those get left-margin numbers.
-  % In true two-column text, left col → left margin, right col → right margin.
+  % Suppress line numbers inside abstract (single-col header produced by
+  % \twocolumn[...] where \linewidth/\if@firstcolumn detection fails).
+  \AtBeginDocument{%
+    \let\mdorig@abstract\abstract
+    \let\mdorig@endabstract\endabstract
+    \renewenvironment{abstract}{\nolinenumbers\mdorig@abstract}{\mdorig@endabstract\linenumbers}%
+  }
+
+  % Outer-edge line numbers for two-column body:
+  % left col → left margin, right col → right margin.
   \renewcommand\makeLineNumber{%
-    \ifdim\linewidth>1.5\columnwidth
-      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
-    \else\if@firstcolumn
+    \if@firstcolumn
       \hss\linenumberfont\thelinenumber\hskip\linenumbersep
     \else
       \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
-    \fi\fi
+    \fi
   }
 
   % Bug: An equation with $$ ... $$ isn't numbered, nor is the previous line.
