@@ -52,10 +52,20 @@
     \loop\ifnum\cv@tmpc<#1\relax0\advance\cv@tmpc1\relax\fi \ifnum\cv@tmpc<#1 \repeat
     \cv@tmpc@=#2\relax\ifnum\cv@tmpc@<0\cv@tmpc@=-\cv@tmpc@\fi \relax\the\cv@tmpc@}%
   \renewcommand\thelinenumber{\fillzeros[3]{\arabic{linenumber}}}
-  % Ensure switch mode survives geometry/class resets of \@mparswitch
-  \AtBeginDocument{\@mparswitchtrue\linenumbers}
+  \AtBeginDocument{\linenumbers}
 
   \setlength{\linenumbersep}{1.6cm}
+
+  % Force outer-edge line numbers in twocolumn: left col → left margin, right col → right margin.
+  % lineno's [switch] relies on \@mparswitch which geometry/article resets in one-sided mode.
+  % Instead, override \makeLineNumber to check \if@firstcolumn directly.
+  \renewcommand\makeLineNumber{%
+    \if@firstcolumn
+      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
+    \else
+      \hskip\linenumbersep\linenumberfont\thelinenumber\hss
+    \fi
+  }
 
   % Bug: An equation with $$ ... $$ isn't numbered, nor is the previous line.
 
