@@ -1,0 +1,415 @@
+paper:
+  title: 'MemDistill: Diagnosing Why Distilling RL Agent Memory Fails'
+  version: 2
+  generated_at: '2026-04-12T22:58:00Z'
+  source: manual rebuild from registry + tex (post-D049 camera-ready)
+  commit: '06d3394'
+
+claims:
+# === Phase 1a: Collapse Curve ===
+- id: C001
+  text: "EM degrades monotonically from 0.62 (N=1) to 0.341 (N=16)"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: collapse_curve}
+  evidence:
+    - {exp_id: exp_002v3_phase1a_collapse_curve, metric: "mem1_n1_em=0.62, mem1_n16_em=0.341"}
+  deprecated: false
+
+- id: C002
+  text: "Base model collapses immediately: N=1 EM=0.30, N>=2 fluctuates 0.075-0.148"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: collapse_curve}
+  evidence:
+    - {exp_id: exp_002v3_phase1a_collapse_curve, metric: "base_n1_em=0.3, base_n4_em=0.075, base_n16_em=0.148"}
+  deprecated: false
+
+# === Phase 1b: SVD Alignment ===
+- id: C003
+  text: "RL weight changes concentrate 2-6x supra-random along base principal directions"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: svd_alignment}
+  evidence:
+    - {exp_id: exp_003b_random_baseline, metric: "obs_over_random_k64=6.48, obs_over_random_k256=2.78"}
+  deprecated: false
+
+- id: C004
+  text: "SFT alignment ratio 1.47x vs RL 2.78x at k=256"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: svd_three_model}
+  evidence:
+    - {exp_id: exp_004_phase1c_probing, metric: "svd_sft_base_obs_random_k256=1.47, svd_rl_base_obs_random_k256=2.78"}
+  deprecated: false
+
+- id: C005
+  text: "Wilcoxon p < 1.3e-32 across 196 weight matrices, 99% of layers show r_RL > r_SFT"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: svd_statistics}
+  evidence:
+    - {exp_id: exp_003b_random_baseline, metric: "n_matrices=196"}
+    - {exp_id: exp_004_phase1c_probing, metric: "svd analysis"}
+  deprecated: false
+
+- id: C006
+  text: "MLP layers show stronger RL alignment (3.49x) than attention (2.25x)"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: svd_layer_type}
+  evidence:
+    - {exp_id: exp_003b_random_baseline, metric: "mlp_obs_random_k256=3.49, attn_obs_random_k256=2.25"}
+  deprecated: false
+
+- id: C007
+  text: "Attention U-side alignment 0.31 vs V-side 0.12 (output direction asymmetry)"
+  type: quantitative
+  location: {section: section2_diagnostic_framework, context: svd_uv_asymmetry}
+  evidence:
+    - {exp_id: exp_003b_random_baseline, metric: "attn_u_side_k256=0.3122, attn_v_side_k256=0.1194"}
+  deprecated: false
+
+# === Phase 1c: Activation Probing ===
+- id: C008
+  text: "Linear probe accuracy 0.72, below majority baseline 0.76; R^2 all negative"
+  type: quantitative
+  location: {section: appendix, context: probing_linear}
+  evidence:
+    - {exp_id: exp_004_phase1c_probing, metric: "probe_go_no_go=PARTIAL, probe accuracy < majority baseline"}
+  deprecated: false
+
+- id: C009
+  text: "MLP probes lose to linear in 47/55 cases (85.5%); paired t=-8.19, p=4.83e-11"
+  type: quantitative
+  location: {section: appendix, context: probing_mlp}
+  evidence:
+    - {exp_id: exp_007_phase1c_mlp_probe, metric: "mlp_lost_to_linear_pct=0.8545, mlp_vs_linear_paired_t=-8.192, mlp_vs_linear_p=4.83e-11"}
+  deprecated: false
+
+- id: C010
+  text: "Random feature noise band |rho| <= 0.224; 94.5% of real probes fall within"
+  type: quantitative
+  location: {section: appendix, context: probing_random_baseline}
+  evidence:
+    - {exp_id: exp_007_phase1c_mlp_probe, metric: "noise_band_linear_abs_max=0.224, real_linear_above_noise_band_pct=0.0545"}
+  deprecated: false
+
+# === Distillation: DPO vs SFT ===
+- id: C011
+  text: "SFT shared (3B): N2=0.112, N4=0.084, N8=0.025"
+  type: quantitative
+  location: {section: section3_distillation, context: table_eval_matrix}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix N2=0.1116, N4=0.084, N8=0.025"}
+  deprecated: false
+
+- id: C012
+  text: "DPO best at N=8: +1.0pp (p=0.163, 95% CI [-0.9, +2.9]pp), below 5pp threshold"
+  type: quantitative
+  location: {section: section3_distillation, context: dpo_results}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "bootstrap_N8_d031fix DPO_N8 delta=0.01, p=0.163"}
+  deprecated: false
+
+- id: C013
+  text: "Power >0.99 for 5pp effect, 0.80 at 2.7pp; informative null"
+  type: quantitative
+  location: {section: section3_distillation, context: power_analysis}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "go_stop_verdict=STOP"}
+  deprecated: false
+
+# === Truncation Confound ===
+- id: C014
+  text: "At 2048 tokens: 93.6% truncated, DPO advantage +2.4pp (p<0.001); at 4096: 83.2%, +1.0pp (p=0.163)"
+  type: quantitative
+  location: {section: section3_distillation, context: truncation_confound}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared N8 trunc=0.936 vs d031fix N8 trunc=0.832"}
+  deprecated: false
+
+# === Capacity Isolation (exp_012) ===
+- id: C015
+  text: "7B pooled SFT: N2=0.171, N4=0.147, N8=0.079 (vs 3B: 0.112/0.084/0.025)"
+  type: quantitative
+  location: {section: section3_distillation, context: table_eval_matrix}
+  evidence:
+    - {exp_id: exp_012_7b_pooled_sft_v2, metric: "N2.em_partial=0.1713, N4.em_partial=0.1469, N8.em_partial=0.079"}
+  deprecated: false
+
+- id: C016
+  text: "Capacity contribution at most ~12-14%: 12.3% (N=2), 13.8% (N=4), 12.6% (N=8)"
+  type: quantitative
+  location: {section: section3_distillation, context: capacity_isolation}
+  evidence:
+    - {exp_id: exp_012_7b_pooled_sft_v2, metric: "N2=(0.171-0.112)/(0.59-0.112)=12.3%, N4=13.8%, N8=12.6%"}
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "3B baseline: eval_sft_shared_d031fix"}
+    - {exp_id: exp_002v3_phase1a_collapse_curve, metric: "RL teacher: mem1_n2_em=0.59, mem1_n4_em=0.54, mem1_n8_em=0.455"}
+  deprecated: false
+
+- id: C017
+  text: "7B truncation: 16.7%/29.8%/60.8% vs 3B: 30.7%/55.7%/83.2%"
+  type: quantitative
+  location: {section: section3_distillation, context: capacity_truncation}
+  evidence:
+    - {exp_id: exp_012_7b_pooled_sft_v2, metric: "N2.truncated_rate=0.167, N4=0.298, N8=0.608"}
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix N2 trunc=0.307, N4=0.557, N8=0.832"}
+  deprecated: false
+
+- id: C018
+  text: "7B best (0.171) = 29% of RL teacher (0.59); capacity is minor contributing factor"
+  type: quantitative
+  location: {section: section3_distillation, context: capacity_synthesis}
+  evidence:
+    - {exp_id: exp_012_7b_pooled_sft_v2, metric: "N2.em_partial=0.1713"}
+    - {exp_id: exp_002v3_phase1a_collapse_curve, metric: "mem1_n2_em=0.59"}
+  deprecated: false
+
+# === Oracle Retrieval (exp_009) ===
+- id: C019
+  text: "Oracle retrieval recovers em_partial from 0.025 to 0.498 at N=8 (+47.3pp, p<0.0001)"
+  type: quantitative
+  location: {section: section3_distillation, context: oracle_retrieval}
+  evidence:
+    - {exp_id: exp_009_student_with_api, metric: "oracle_N8.em_partial=0.498, delta_N8=0.473, bootstrap_N8.p=0.0001"}
+  deprecated: false
+
+- id: C020
+  text: "Oracle: truncation drops from 83.2% to 0%"
+  type: quantitative
+  location: {section: section3_distillation, context: oracle_truncation}
+  evidence:
+    - {exp_id: exp_009_student_with_api, metric: "oracle_N8.truncated_rate=0"}
+  deprecated: false
+
+- id: C021
+  text: "Student search query Jaccard = 0.95 vs teacher (median=1.0, n=507)"
+  type: quantitative
+  location: {section: section3_distillation, context: query_fidelity}
+  evidence:
+    - {exp_id: exp_009_student_with_api, metric: "strategy_analysis.query_jaccard_mean=0.95, query_jaccard_median=1"}
+  deprecated: false
+
+- id: C022
+  text: "Teacher >95% single search round (mean 1.04/1.01/1.06 at N=2/4/8)"
+  type: quantitative
+  location: {section: section3_distillation, context: teacher_search_pattern}
+  evidence:
+    - {exp_id: exp_009_student_with_api, metric: "strategy_analysis.teacher_avg_searches_N2=1.044, teacher_single_search_pct=>95%"}
+  deprecated: false
+
+- id: C023
+  text: "Per-objective accuracy ~50% (range 38-58%), em_full low due to 0.5^N stacking"
+  type: quantitative
+  location: {section: section3_distillation, context: emfull_analysis}
+  evidence:
+    - {exp_id: exp_009_student_with_api, metric: "strategy_analysis.per_obj_accuracy_range=38-58%, emfull_probability_stacking=0.5^N"}
+  deprecated: false
+
+# === BM25 Retrieval (exp_011) ===
+- id: C024
+  text: "BM25 retrieval: N2=0.203, N4=0.147, N8=0.147; truncation=0% across all N"
+  type: quantitative
+  location: {section: section3_distillation, context: bm25_retrieval}
+  evidence:
+    - {exp_id: exp_011_bm25_retrieval, metric: "bm25_N2.em_partial=0.2032, bm25_N4=0.1469, bm25_N8=0.147, truncated_rate=0"}
+  deprecated: false
+
+- id: C025
+  text: "BM25 vs no-API: +9.2pp (N=2), +6.3pp (N=4), +12.2pp (N=8)"
+  type: quantitative
+  location: {section: section3_distillation, context: bm25_delta}
+  evidence:
+    - {exp_id: exp_011_bm25_retrieval, metric: "delta_vs_noapi_N2=0.0916, delta_vs_noapi_N4=0.0629, delta_vs_noapi_N8=0.122"}
+  deprecated: false
+
+# === Synthesis ===
+- id: C026
+  text: "Behavioral mismatch accounts for ~86-88% of teacher-student gap (with non-additivity caveat)"
+  type: quantitative
+  location: {section: section3_distillation, context: synthesis}
+  evidence:
+    - {exp_id: exp_012_7b_pooled_sft_v2, metric: "capacity ~12-14%, remainder ~86-88%"}
+    - {exp_id: exp_009_student_with_api, metric: "oracle recovery +43-47pp"}
+  deprecated: false
+
+# === Training Details ===
+- id: C027
+  text: "SFT: 1,118 partial-credit trajectories, 3 epochs, lr=2e-4, LoRA rank 32"
+  type: methodological
+  location: {section: section3_distillation, context: training_pipeline}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "sft_shared.num_train=1118, epochs=3, lr=0.0002, lora_rank=32"}
+  deprecated: false
+
+- id: C028
+  text: "DPO: 176 matched pairs, 1 epoch, beta=0.05, lr=2e-5"
+  type: methodological
+  location: {section: section3_distillation, context: training_pipeline}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2_stage1, metric: "dpo_N2.matched_size=176, epochs=1, beta=0.05, lr=2e-5"}
+  deprecated: false
+
+- id: C029
+  text: "7B pooled SFT: full-rank, 2 epochs, lr=2e-5, batch 1, grad_accum 4, bf16, loss=0.83"
+  type: methodological
+  location: {section: appendix, context: 7b_hyperparams}
+  evidence:
+    - {exp_id: exp_012_7b_pooled_sft_v2, metric: "560 steps, 19.5 min, final loss 0.8293"}
+  deprecated: false
+
+- id: C030
+  text: "Data: N=4 bottleneck — 176 DPO pairs from 500 prompts at 15.2% perfect rate"
+  type: methodological
+  location: {section: section3_distillation, context: matched_sample_design}
+  evidence:
+    - {exp_id: exp_006_phase1d_v2, metric: "n4_perfect_rate=0.152, n4_dpo_pairs=176"}
+  deprecated: false
+
+tables:
+- id: T001
+  label: tab:eval_matrix
+  location: {section: section3_distillation}
+  caption: "em_partial across distillation methods (max_new_tokens=4096)"
+  cells:
+    - {row: "SFT shared (3B)", col: "N=2", value: "0.112", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix.N2.em_partial"}}
+    - {row: "SFT shared (3B)", col: "N=4", value: "0.084", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix.N4.em_partial"}}
+    - {row: "SFT shared (3B)", col: "N=8", value: "0.025", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix.N8.em_partial"}}
+    - {row: "SFT full-rank (7B)", col: "N=2", value: "0.171", source: {exp_id: exp_012_7b_pooled_sft_v2, metric: "N2.em_partial"}}
+    - {row: "SFT full-rank (7B)", col: "N=4", value: "0.147", source: {exp_id: exp_012_7b_pooled_sft_v2, metric: "N4.em_partial"}}
+    - {row: "SFT full-rank (7B)", col: "N=8", value: "0.079", source: {exp_id: exp_012_7b_pooled_sft_v2, metric: "N8.em_partial"}}
+    - {row: "DPO N=8", col: "N=8", value: "0.035", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_merged_dpo_N8.N8.em_partial"}}
+    - {row: "RL teacher", col: "N=2", value: "0.59", source: {exp_id: exp_002v3_phase1a_collapse_curve, metric: "mem1_n2_em"}}
+    - {row: "RL teacher", col: "N=4", value: "0.54", source: {exp_id: exp_002v3_phase1a_collapse_curve, metric: "mem1_n4_em"}}
+    - {row: "RL teacher", col: "N=8", value: "0.455", source: {exp_id: exp_002v3_phase1a_collapse_curve, metric: "mem1_n8_em"}}
+  deprecated: false
+
+- id: T002
+  label: tab:truncation_confound
+  location: {section: section3_distillation}
+  caption: "Truncation confound at N=8"
+  cells:
+    - {row: "SFT 2048", col: "em_partial", value: "0.011", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared.N8.em_partial"}}
+    - {row: "SFT 2048", col: "trunc", value: "93.6%", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared.N8.truncated_rate"}}
+    - {row: "SFT 4096", col: "em_partial", value: "0.025", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix.N8.em_partial"}}
+    - {row: "SFT 4096", col: "trunc", value: "83.2%", source: {exp_id: exp_006_phase1d_v2_stage1, metric: "eval_sft_shared_d031fix.N8.truncated_rate"}}
+  deprecated: false
+
+- id: T003
+  label: tab:oracle_api
+  location: {section: section3_distillation}
+  caption: "Effect of oracle retrieval at inference time"
+  cells:
+    - {row: "SFT + oracle", col: "N=2", value: "0.530", source: {exp_id: exp_009_student_with_api, metric: "oracle_N2.em_partial"}}
+    - {row: "SFT + oracle", col: "N=4", value: "0.521", source: {exp_id: exp_009_student_with_api, metric: "oracle_N4.em_partial"}}
+    - {row: "SFT + oracle", col: "N=8", value: "0.498", source: {exp_id: exp_009_student_with_api, metric: "oracle_N8.em_partial"}}
+  deprecated: false
+
+- id: T004
+  label: tab:bm25
+  location: {section: section3_distillation}
+  caption: "em_partial under different retrieval conditions"
+  cells:
+    - {row: "SFT + BM25", col: "N=2", value: "0.203", source: {exp_id: exp_011_bm25_retrieval, metric: "bm25_N2.em_partial"}}
+    - {row: "SFT + BM25", col: "N=4", value: "0.147", source: {exp_id: exp_011_bm25_retrieval, metric: "bm25_N4.em_partial"}}
+    - {row: "SFT + BM25", col: "N=8", value: "0.147", source: {exp_id: exp_011_bm25_retrieval, metric: "bm25_N8.em_partial"}}
+  deprecated: false
+
+- id: T005
+  label: tab:training_hyperparams
+  location: {section: appendix}
+  caption: "Training hyperparameters for SFT and DPO stages"
+  cells: []
+  deprecated: false
+
+- id: T006
+  label: tab:7b_hyperparams
+  location: {section: appendix}
+  caption: "Training hyperparameters for 7B full-rank capacity-isolation SFT"
+  cells: []
+  deprecated: false
+
+- id: T007
+  label: tab:svd_alignment
+  location: {section: section2_diagnostic_framework}
+  caption: "SVD alignment ratio r(k)"
+  cells:
+    - {row: "RL-base", col: "k=64", value: "6.48", source: {exp_id: exp_003b_random_baseline, metric: "obs_over_random_k64"}}
+    - {row: "RL-base", col: "k=256", value: "2.78", source: {exp_id: exp_003b_random_baseline, metric: "obs_over_random_k256"}}
+    - {row: "SFT-base", col: "k=256", value: "1.47", source: {exp_id: exp_004_phase1c_probing, metric: "svd_sft_base_obs_random_k256"}}
+    - {row: "RL-SFT", col: "k=256", value: "1.81", source: {exp_id: exp_004_phase1c_probing, metric: "svd_rl_sft_obs_random_k256"}}
+  deprecated: false
+
+figures:
+- id: F001
+  label: fig:collapse_curve
+  location: {section: section2_diagnostic_framework}
+  caption: "Multi-objective performance collapse"
+  source_path: collapse_curve.pdf
+  type: result
+  deprecated: false
+
+- id: F002
+  label: fig:svd_boxplot
+  location: {section: appendix}
+  caption: "Per-layer SVD alignment ratio distribution"
+  source_path: svd_alignment_boxplot.pdf
+  type: result
+  deprecated: false
+
+# === W2: Cross-backbone generality (exp_013, Llama-3.2-1B) ===
+# Distilling the same MEM1 RL teacher into Llama-3.2-1B (cross-family,
+# ~1/3 the Qwen-3B student size) via identical SFT pipeline reproduces
+# the silent-failure mode near-verbatim, upgrading the story from a
+# single case study to a systematic SFT-distillation failure mode.
+- id: C031
+  text: "Llama-1B silent failure replicates Qwen-3B: tool_call_syntax=1.00, balanced_xml=1.00, queries_nonempty=1.00 (vs Qwen 1.00/1.00/1.00)"
+  type: quantitative
+  location: {section: section1_introduction, context: cross_backbone_replication}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "surface_metrics_N8.tool_call_syntax=1.0, balanced_tags=1.0, queries_nonempty=1.0"}
+  deprecated: false
+
+- id: C032
+  text: "Llama-1B content metrics match Qwen-3B silent failure: action_seq=0.606, BLEU=1.16, ROUGE-L=0.21 (Qwen: 0.606, 1.14, 0.21)"
+  type: quantitative
+  location: {section: section1_introduction, context: cross_backbone_replication}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "surface_metrics_N8.action_sequence_accuracy=0.6058, bleu=1.1618, rouge_l=0.2124"}
+  deprecated: false
+
+- id: C033
+  text: "Llama-1B no-API em_partial N2/N4/N8=0.0737/0.0630/0.0140 with trunc 29.9/51.2/85.6%"
+  type: quantitative
+  location: {section: section3_distillation, context: cross_backbone_eval_matrix}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "no_api.N2.em_partial=0.0737, N4=0.063, N8=0.014; trunc=0.299/0.5115/0.856"}
+  deprecated: false
+
+- id: C034
+  text: "Llama-1B oracle recovery: N2=0.4104, N4=0.4008, N8=0.3510, truncation drops to 0% (consistent with Qwen's behavioral-mismatch diagnosis)"
+  type: quantitative
+  location: {section: section3_distillation, context: cross_backbone_oracle}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "oracle.N2.em_partial=0.4104, N4=0.4008, N8=0.351, truncated_rate=0"}
+  deprecated: false
+
+- id: C035
+  text: "Llama-1B BM25 recovery: N2=0.1355, N4=0.0935, N8=0.0660 (trunc=0% across)"
+  type: quantitative
+  location: {section: section3_distillation, context: cross_backbone_bm25}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "bm25.N2.em_partial=0.1355, N4=0.0935, N8=0.066, truncated_rate=0"}
+  deprecated: false
+
+- id: C036
+  text: "W2 generality claim: silent failure is systematic to SFT distillation of RL agentic policies, not backbone-specific (replicated cross-family Qwen→Llama at 1/3 scale)"
+  type: qualitative
+  location: {section: section5_conclusion, context: generality_finding}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "surface/no_api/oracle/bm25 triple replicate Qwen-3B within ~1pp"}
+  deprecated: false
+
+- id: C037
+  text: "exp_013 SFT training: 420 steps, train_loss=1.086, eval_loss=1.029, token_acc=0.7665, LoRA r32 α64 attn+MLP, 1118 trajectories, 3 epochs, lr=2e-4"
+  type: methodological
+  location: {section: appendix, context: exp_013_hyperparams}
+  evidence:
+    - {exp_id: exp_013_w2_cross_backbone_llama1b, metric: "sft_train.train_loss=1.086, eval_loss=1.029, token_acc=0.7665, steps=420"}
+  deprecated: false
