@@ -1,0 +1,56 @@
+[
+  {
+    "prompt_id": 0,
+    "gold_answers": [
+      "novelist",
+      "Roving Mars",
+      "The Godfather Part II",
+      "Gloria Trevi",
+      "\"the Gentle Don\" or \"the Docile Don\"",
+      "Tel Aviv",
+      "no",
+      "Melbourne, Australia"
+    ],
+    "info_block_before": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Alan Dean Foster) Alan Dean Foster (born November 18, 1946) is an American writer of fantasy and science fiction, a prolific creator of and contributor to book series as well as the author of more than 20 standalone novels.  He is especially prolific in his novelizations of film scripts.\nDoc 2(Title: John Lanchester) John Henry Lanchester (born 25 February 1962) is a British journalist and novelist. ...[TRUNCATED]",
+    "info_block_after_full_redact": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Alan Dean Foster) Alan Dean Foster (born November 18, 1946) is an American writer of fantasy and science fiction, a prolific creator of and contributor to book series as well as the author of more than 20 standalone novels.  He is especially prolific in his novelizations of film scripts.\nDoc 2(Title: John Lanchester) John Henry Lanchester (born 25 February 1962) is a British journalist and [REDACTED]. ...[TRUNCATED]",
+    "info_block_after_half_redact": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Alan Dean Foster) Alan Dean Foster (born November 18, 1946) is an American writer of fantasy and science fiction, a prolific creator of and contributor to book series as well as the author of more than 20 standalone novels.  He is especially prolific in his novelizations of film scripts.\nDoc 2(Title: John Lanchester) John Henry Lanchester (born 25 February 1962) is a British journalist and novelist. ...[TRUNCATED]",
+    "n_substitutions_full": 10,
+    "n_substitutions_half": 5
+  },
+  {
+    "prompt_id": 1,
+    "gold_answers": [
+      "The Most Dangerous Game",
+      "American",
+      "Dewey Lake Monster",
+      "1976",
+      "German",
+      "FAI Junior Cup",
+      "Dusty Dvoracek",
+      "I.O.U.S.A."
+    ],
+    "info_block_before": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Seven Faces) Seven Faces is a 1929 American pre-Code drama film with fantasy elements that was released by Fox Film Corporation in the Fox Movietone sound-on-film system on December 1, 1929.  Based upon the piece of short fiction \"A Friend of Napoleon\" which was published in the June 30, 1923, issue of ...[TRUNCATED]",
+    "info_block_after_full_redact": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Seven Faces) Seven Faces is a 1929 [REDACTED] pre-Code drama film with fantasy elements that was released by Fox Film Corporation in the Fox Movietone sound-on-film system on December 1, 1929.  Based upon the piece of short fiction \"A Friend of Napoleon\" which was published in the June 30, 1923, issue o...[TRUNCATED]",
+    "info_block_after_half_redact": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Seven Faces) Seven Faces is a 1929 [REDACTED] pre-Code drama film with fantasy elements that was released by Fox Film Corporation in the Fox Movietone sound-on-film system on December 1, 1929.  Based upon the piece of short fiction \"A Friend of Napoleon\" which was published in the June 30, 1923, issue o...[TRUNCATED]",
+    "n_substitutions_full": 20,
+    "n_substitutions_half": 10
+  },
+  {
+    "prompt_id": 2,
+    "gold_answers": [
+      "Firestorm",
+      "Brunswick Golden Isles Airport",
+      "John R. Leonetti",
+      "Diamond White",
+      "560",
+      "University of California",
+      "Karl Marx",
+      "filibuster"
+    ],
+    "info_block_before": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Firestorm (comics)) Firestorm is the name of several fictional superheroes appearing in American comic books published by DC Comics.  Ronnie Raymond and Martin Stein debuted as the first incarnation in \"Firestorm, the Nuclear Man\" No. 1 (March 1978) and was created by Gerry Conway and Al Milgrom.  Jason...[TRUNCATED]",
+    "info_block_after_full_redact": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: [REDACTED] (comics)) [REDACTED] is the name of several fictional superheroes appearing in American comic books published by DC Comics.  Ronnie Raymond and Martin Stein debuted as the first incarnation in \"[REDACTED], the Nuclear Man\" No. 1 (March 1978) and was created by Gerry Conway and Al Milgrom.  Ja...[TRUNCATED]",
+    "info_block_after_half_redact": "<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: [REDACTED] (comics)) Firestorm is the name of several fictional superheroes appearing in American comic books published by DC Comics.  Ronnie Raymond and Martin Stein debuted as the first incarnation in \"[REDACTED], the Nuclear Man\" No. 1 (March 1978) and was created by Gerry Conway and Al Milgrom.  Jas...[TRUNCATED]",
+    "n_substitutions_full": 19,
+    "n_substitutions_half": 10
+  }
+]

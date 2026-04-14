@@ -1,0 +1,10 @@
+{
+  "n_prompts": 125,
+  "n_blocks_total": 125,
+  "n_blocks_with_redaction": 125,
+  "n_redacted_substitutions_total": 1663,
+  "mean_redactions_per_block": 13.304,
+  "fully_unredactable_prompt_ids": [],
+  "note": "Dry-run (Phase 0) output from scripts/exp_016_passage_redaction.py --phase 0 on phase1d_v2 N=8 test split (125 prompts). Gate n_blocks_with_redaction>=100 passed: 125/125. Word-boundary + quote-stripped gold matching (commit 7cf099d) prevents catastrophic over-redaction from short golds (e.g. 'no' matching 'November').",
+  "per_prompt_n_substitutions_full": [10, 20, 19, 11, 13, 15, 11, 15, 13, 19, 12, 14, 15, 15, 11, 15, 15, 19, 18, 11, 13, 13, 15, 11, 11, 13, 19, 12, 16, 15, 11, 10, 8, 13, 13, 9, 15, 12, 16, 15, 18, 15, 9, 12, 8, 14, 11, 13, 12, 11, 18, 18, 19, 19, 14, 14, 8, 18, 15, 10, 8, 23, 14, 13, 13, 11, 10, 10, 9, 11, 16, 11, 13, 16, 11, 10, 13, 21, 19, 14, 17, 17, 13, 13, 8, 15, 10, 12, 10, 11, 13, 13, 8, 14, 12, 12, 10, 10, 17, 10, 17, 18, 11, 11, 12, 14, 20, 13, 12, 9, 11, 9, 13, 8, 12, 13, 14, 12, 20, 10, 11, 15, 18, 9, 13]
+}
