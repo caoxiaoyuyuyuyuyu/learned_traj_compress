@@ -103,7 +103,7 @@ The evidence converges on three points: (i)~\textbf{preference learning leaves t
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{gap_decomposition.pdf}
-\caption{Teacher--student gap: two independent upper bounds, not a complementary partition. Capacity bound $(\text{em}_{7\text{B}}-\text{em}_{3\text{B}})/(\text{em}_\text{teacher}-\text{em}_{3\text{B}})=12.6\%$ at $N\!=\!8$. Retrieval-quality bound: oracle intervention recovers $110\%$ of the teacher gap at $N\!=\!8$, exceeding $100\%$ because oracle provides cleaner passages than the teacher's own retrieval trajectory.}
+\caption{Teacher--student gap: two independent upper bounds, not a complementary partition. Capacity bound $(\text{em}_{7\text{B}}-\text{em}_{3\text{B}})/(\text{em}_\text{teacher}-\text{em}_{3\text{B}})=12.6\%$ at $N\!=\!8$. Retrieval-quality bound: oracle intervention recovers $110\%$ of the teacher gap at $N\!=\!8$, exceeding 100\% because the oracle replay isolates retrieval from search-strategy mismatch, while the teacher's observed gap compounds both retrieval and search costs.}
 \label{fig:gap_decomposition}
 \end{figure}
 

@@ -56,31 +56,6 @@
 
   \setlength{\linenumbersep}{1.6cm}
 
-  % Flag-based detection for abstract (single-col span produced by
-  % \twocolumn[...] where \if@firstcolumn is unreliable).
-  \newif\ifmd@inabstract
-  \md@inabstractfalse
-  \AtBeginDocument{%
-    \let\mdorig@abstract\abstract
-    \let\mdorig@endabstract\endabstract
-    \renewenvironment{abstract}%
-      {\md@inabstracttrue\mdorig@abstract}%
-      {\mdorig@endabstract\md@inabstractfalse}%
-  }
-
-  % Outer-edge line numbers.
-  % Abstract (single-col): always left margin.
-  % Two-column body: left col → left margin, right col → right margin.
-  \renewcommand\makeLineNumber{%
-    \ifmd@inabstract
-      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
-    \else\if@firstcolumn
-      \hss\linenumberfont\thelinenumber\hskip\linenumbersep
-    \else
-      \hskip\columnwidth\hskip\linenumbersep\linenumberfont\thelinenumber\hss
-    \fi\fi
-  }
-
   % Bug: An equation with $$ ... $$ isn't numbered, nor is the previous line.
 
   % Patch amsmath commands so that the previous line and the equation itself
