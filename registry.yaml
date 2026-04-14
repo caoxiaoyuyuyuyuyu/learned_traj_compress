@@ -1,0 +1,1706 @@
+baseline: null
+experiments:
+  prep_download_qwen7b_base:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T16:01:16.752Z'
+    updated_at: '2026-04-09T18:54:44.435Z'
+    note: Qwen2.5-7B base 下载完成。4/4 safetensors shards (14.3GB) 位于 /root/autodl-tmp/models/Qwen2.5-7B/。
+    conclusion: success
+    metrics:
+      shards_complete: 4
+      total_size_gb: 14.3
+      path: /root/autodl-tmp/models/Qwen2.5-7B
+  prep_download_mem1_rl:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T16:01:17.776Z'
+    updated_at: '2026-04-09T18:54:42.350Z'
+    note: MEM1 RL 7B 下载完成。7/7 safetensors shards (32GB) 位于 /root/autodl-tmp/models/MEM1/。通过
+      aria2c 多线程续传。
+    conclusion: success
+    metrics:
+      shards_complete: 7
+      total_size_gb: 32
+      path: /root/autodl-tmp/models/MEM1
+  exp_001_inference_validation:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T18:53:38.789Z'
+    updated_at: '2026-04-09T19:02:17.453Z'
+    hypothesis: MEM1 7B RL 模型可正常加载和生成，且在 RAG QA 任务上输出质量优于 Qwen2.5-7B base（体现 RL 训练效果）
+    note: Phase 0 推理验证。Go/no-go 标准：(1) MEM1 RAG QA EM ≥ 0.3 (2) MEM1 输出明显优于 Qwen2.5-7B
+      base (3) 推理速度 ≥ 5 tok/s。任一不满足则暂停汇报 Director。
+    server: autodl-ltc
+    gpu_ids:
+    - cuda:0
+    pid: 14912
+    conclusion: success
+    metrics:
+      mem1_load_time_s: 11.5
+      mem1_avg_tps: 35.7
+      mem1_gpu_mem_gb: 15.2
+      mem1_params_b: 7.62
+      base_load_time_s: 6.1
+      base_avg_tps: 67.4
+      base_gpu_mem_gb: 15.2
+      mem1_em_mean: 1
+      base_em_mean: 1
+      mem1_output_style: direct_answer_tags
+      base_output_style: verbose_then_answer
+  exp_002_phase1a_collapse_curve:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T19:07:04.564Z'
+    updated_at: '2026-04-09T20:49:53.167Z'
+    hypothesis: MEM1 RL 7B 的 per-objective EM 随目标数 N 增加而下降，collapse（EM<0.1 的 objective
+      占比显著上升）发生在 N>6 附近。Qwen2.5-7B base 在所有 N 上表现更差且 collapse 更早。
+    note: 'Phase 1a: 大规模多目标评估。N=1,2,4,8,12,16 × 50 samples × 2 models (MEM1 RL + Qwen2.5-7B
+      base)。Gold passages (仅 HotpotQA), 无 RAG。单轮评估 (min_answer_tags=1)。失败原因: numpy.bool_
+      JSON序列化错误 (scipy mannwhitneyu p_value < 0.05 产生 numpy.bool_)。评估实际已全部完成，仅保存结果时崩溃。修复:
+      bool() 转换。fix_worker_id: worker_fix_exp_002_json_bug_20260409T203609'
+    gpu_ids:
+    - cuda:0
+    pid: 23086
+    reproduce:
+      finished_at: '2026-04-09T20:34:04.105Z'
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-09T20:34:02.799877+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-09T20:34:03.870412+00:00'
+  exp_002v2_phase1a_collapse_curve:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T20:39:56.098Z'
+    updated_at: '2026-04-09T20:44:56.375Z'
+    hypothesis: exp_002 重跑（修复 numpy.bool_ JSON 序列化 bug）。同假设：MEM1 RL 7B 的 per-objective
+      EM 随目标数 N 增加而下降，collapse 发生在 N>6 附近。
+    parent: exp_002_phase1a_collapse_curve
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-09T20:40:09.028Z'
+      command: cd /root/autodl-tmp/learned_traj_compress && git pull origin main &&
+        source /root/miniconda3/bin/activate && python scripts/eval_collapse_curve.py
+        --mem1_dir /root/autodl-tmp/models/MEM1 --base_dir /root/autodl-tmp/models/Qwen2.5-7B
+        --n_values 1 2 4 8 12 16 --samples_per_n 50 --output_path /root/autodl-tmp/learned_traj_compress/results/exp_002v2_collapse_curve.json
+        2>&1 | tee /root/autodl-tmp/learned_traj_compress/logs/exp_002v2_collapse_curve.log
+      code_commit: dae3c86ad9e85b91a1cd1adf6644f7f07c81955e
+      finished_at: '2026-04-09T20:43:40.790Z'
+      training_hours: 0.06
+    pid: unknown
+    log_path: ~/runs/learned_traj_compress/exp_002v2_phase1a_collapse_curve.log
+    note: exp_002 重跑。修复 numpy.bool_ JSON 序列化 bug 后重新提交。N=1,2,4,8,12,16 × 50 samples
+      × 2 models (MEM1 RL + Qwen2.5-7B base)。Gold passages (仅 HotpotQA), 无 RAG。sync_code=true
+      已拉取最新代码。
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-09T20:43:40.836115+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-09T20:43:41.475294+00:00'
+    notes: '失败原因: submit_on_allocated 的 timeout 包装器把 `cd` 当作外部命令执行（cd 是 shell builtin,
+      EXIT_CODE=127）。实验未启动。修复方案: 提交命令用 `bash -c "cd /path && ..."` 包装，或改用绝对路径直接执行脚本。前序
+      exp_002 的 numpy.bool_ bug 已修复（commit 47cfbdf），代码本身无问题。'
+  exp_002v3_phase1a_collapse_curve:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T20:50:03.499Z'
+    updated_at: '2026-04-09T21:56:08.220Z'
+    hypothesis: MEM1 RL 7B 的 per-objective EM 随目标数 N 增加而下降，collapse（EM<0.1 的 objective
+      占比显著上升）发生在 N>6 附近。Qwen2.5-7B base 在所有 N 上表现更差且 collapse 更早。
+    note: 'Phase 1a v3: 修正 MEM1 prompt 格式后的完整 collapse curve。使用 MEM1 原始多问题 prompt
+      + assistant prefix 模拟搜索完成状态 + <information> tag。Sanity check: N=1 EM 从 16%→80%。N=1,2,4,8,12,16
+      × 50 samples × 2 models。parent: exp_002_phase1a_collapse_curve (failed, prompt
+      mismatch)。'
+    server: autodl-ltc
+    gpu_ids:
+    - cuda:0
+    pid: 23086
+    parent: exp_002_phase1a_collapse_curve
+    metrics:
+      mem1_n1_em: 0.62
+      mem1_n2_em: 0.59
+      mem1_n4_em: 0.54
+      mem1_n8_em: 0.455
+      mem1_n12_em: 0.408
+      mem1_n16_em: 0.341
+      base_n1_em: 0.3
+      base_n2_em: 0.15
+      base_n4_em: 0.075
+      base_n8_em: 0.125
+      base_n12_em: 0.147
+      base_n16_em: 0.148
+      mem1_n8_vs_n1_p: 0.0177
+      mem1_n16_vs_n2_p: 0
+      collapse_exists: true
+      rl_base_gap: true
+      curve_nonlinear: false
+      go_no_go: partial
+    conclusion: success
+  exp_003_phase1b_svd_analysis:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T22:01:48.670Z'
+    updated_at: '2026-04-09T22:40:50.235Z'
+    hypothesis: MEM1 RL 训练通过扩展权重矩阵的有效秩（mode expansion）获得多目标能力：RL 模型相比 base 在关键层有更高的
+      effective rank、更大的 singular direction rotation，且 ΔW 主要分布在 base 模型 top subspace
+      之外（新方向）。这解释了 SFT 蒸馏失败——SFT 倾向于压缩秩（mode collapse），丢失 RL 学到的新方向。
+    parent: exp_002v3_phase1a_collapse_curve
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-09T22:04:58.244Z'
+    pid: 28117
+    metrics:
+      n_matrices: 196
+      elapsed_s: 317
+      eff_rank_delta_mean: 0.0014
+      U_angle_mean_deg: 1.264
+      CORRECTED_obs_over_random_k256: 2.78
+      CORRECTED_obs_over_random_k64: 6.48
+      CORRECTED_obs_over_random_k128: 4.11
+      CORRECTED_obs_over_random_k512: 2.01
+      CORRECTED_obs_over_random_k1024: 1.64
+      attn_obs_random_k256: 2.25
+      mlp_obs_random_k256: 3.49
+      attn_u_side_k256: 0.3122
+      attn_v_side_k256: 0.1194
+      mlp_u_side_k256: 0.0517
+      mlp_v_side_k256: 0.1128
+      alignment_direction: supra-random
+      go_mode_expansion: true
+      go_direction_rotation: false
+      go_new_directions: false
+      go_overall: CORRECTED
+    conclusion: success
+    notes: 'exp_003b 随机基线校准修正：原始 97.6% out-of-subspace 是高维几何必然。校准后 RL ΔW 在 base top-256
+      子空间的对齐度是随机的 2.78 倍（supra-random alignment）。RL 变化优先沿 base 的主方向，而非正交新方向。MLP 对齐更强（3.49x
+      vs attn 2.25x）。k 越小对齐倍数越高（k=64: 6.48x），说明 RL 变化特别集中在 base 最主要的方向上。'
+  exp_004_phase1c_probing:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T22:24:10.210Z'
+    updated_at: '2026-04-10T00:01:03.383Z'
+    hypothesis: （D011修正+Reviewer反馈）RL 在 base 主方向的精细调整模式不同于 SFT：(1) 三模型 SVD 对比（RL-base/SFT-base/RL-SFT）揭示
+      SFT 与 RL 的对齐模式差异（对齐度、U/V不对称性）；(2) 主方向 Δh probe 在 RL 模型中预测 per-objective EM 优于
+      random，且优于 SFT 模型的相同 probe。这证实 RL 的精细调整编码了 SFT 无法捕捉的多目标能力。
+    parent: exp_003_phase1b_svd_analysis
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-09T22:46:08.869Z'
+    metrics:
+      sft_trajectories: 200
+      sft_perfect: 56
+      sft_perfect_rate: 0.28
+      sft_train_loss: 0.9087
+      svd_rl_base_obs_random_k256: 2.78
+      svd_sft_base_obs_random_k256: 1.47
+      svd_rl_sft_obs_random_k256: 1.81
+      svd_rl_base_obs_random_k64: 6.49
+      svd_sft_base_obs_random_k64: 2.92
+      svd_rl_sft_obs_random_k64: 3.8
+      svd_attn_rl_base_k256: 2.25
+      svd_attn_sft_base_k256: 1.07
+      svd_mlp_rl_base_k256: 3.49
+      svd_mlp_sft_base_k256: 2.01
+      probe_mean_em: 0.418
+      probe_binary_pos_rate: 0.24
+      probe_principal_vs_random_rate: 0.6875
+      probe_rl_vs_sft_rate: 0.5
+      probe_go_no_go: PARTIAL
+      probe_note: binary accuracy (~0.72) below majority baseline (0.76), R² all negative
+        - linear probes not predictive
+    conclusion: negative
+    notes: 'Probing negative: 线性 probe 无法预测 per-objective EM（accuracy < majority baseline,
+      R² < 0）。但三模型 SVD 对比有强结果：RL attention obs/random 2.25x vs SFT 1.07x（≈随机），支持 RL-specific
+      mechanism。SVD 结果推动 Phase 1d 2×2 对照实验。'
+  exp_003b_random_baseline:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-09T22:42:23.757Z'
+    updated_at: '2026-04-09T22:42:45.595Z'
+    hypothesis: exp_003 方法论修正：97.6% out-of-subspace 是高维几何必然。添加随机基线校准（100 矩阵）、k 灵敏度（64-1024）、单侧投影、维度归一化，给出正确的
+      observed/random 比值。
+    parent: exp_003_phase1b_svd_analysis
+    metrics:
+      n_matrices: 196
+      n_random: 100
+      elapsed_s: 270
+      obs_over_random_k64: 6.48
+      obs_over_random_k128: 4.11
+      obs_over_random_k256: 2.78
+      obs_over_random_k512: 2.01
+      obs_over_random_k1024: 1.64
+      attn_obs_random_k256: 2.25
+      mlp_obs_random_k256: 3.49
+      attn_u_side_k256: 0.3122
+      attn_v_side_k256: 0.1194
+      mlp_u_side_k256: 0.0517
+      mlp_v_side_k256: 0.1128
+      alignment_direction: supra-random
+    conclusion: success
+  exp_005_phase1d_2x2_contrast:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-10T00:03:33.683Z'
+    updated_at: '2026-04-10T06:06:03.354Z'
+    server: autodl-ltc
+    gpu: cuda:0
+    pid: 48151
+    log_path: /root/autodl-tmp/learned_traj_compress/logs/exp_005_phase1d_resume.log
+    hypothesis: 2×2 因子对照（模型大小 1.5B/3B × 蒸馏方法 SFT/DPO）验证 SVD 对齐差异的因果性：如果 DPO 蒸馏比 SFT
+      更好地保留 RL teacher 的 obs/random profile，则 DPO 在高 N (≥8) 时 EM 也更高。这闭合"对齐差异→蒸馏性能"的因果链。
+    parent: exp_004_phase1c_probing
+    notes: 'D013: DPO loss=log(2) 无信号，数据量不足（116 SFT / 194 DPO），1.5B 全零。SFT obs/random
+      ≈1.0x。进程已终止，评估未完成。'
+    conclusion: failed
+  exp_006_phase1d_v2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-10T06:08:45.974Z'
+    updated_at: '2026-04-12T08:51:55.416Z'
+    hypothesis: Phase 1d 重做（D013+D019 修正）：通过 pipeline 重设计（shared pooled SFT + per-N
+      DPO，matched-sample subsample 至 min(pair_count)）+ 3B-only 验证 SVD 对齐差异的因果性。注意：原方案中"≥1000
+      prompts/N 充足数据"仅 N=2 成立（490 perfect / 1000 prompts → 242 DPO pairs）；N=4 (76/500=15.2%,
+      176 pairs) 和 N=8 (TBD, 预计 <100 pairs) 因 collapse 严重 yield 极低，无法靠加 prompts 解决，转为通过
+      pooled SFT + per-N DPO + matched-sample 主 claim 间接缓解。如果 SFT→DPO（matched-sample）比
+      SFT-only 更好保留 RL teacher 的 obs/random profile，且在高 N 时 EM 增益更大，则因果链闭环。
+    parent: exp_005_phase1d_2x2_contrast
+    notes: "## D015 + D017 + D019 + D022 + D023 + D024: 修正版 + 裁剪 + Stage 1 重设计 + 主张指标钉死\
+      \ + SFT partial-credit + max_length\n\n数据路径：/root/autodl-tmp/learned_traj_compress/artifacts/phase1d_v2_data/\n\
+      \n### Stage 0 数据真值（perfect-only 准则，stats.json）\n\n| N | prompts | perfect |\
+      \ perfect% | SFT (perfect-only) | DPO pairs |\n|---|---------|---------|----------|--------------------|-----------|\
+      \ \n| 2 | 1000 | 490 | 49.0% | 490 | 242 |\n| 4 | 500 | 76 | 15.2% | 76 | 176\
+      \ |\n| 8 | 500 | 2 | **0.4%** | 2 | 277 |\n| **Total** | **2000** | **568**\
+      \ | — | **568** | **695** |\n\n**Stage 0 SUCCESS** @ 2026-04-10 18:39 UTC，198.7\
+      \ min，无错误。\n\n### D023 SFT 入选准则切换 — partial-credit (commit f9ee8c8)\n\n**触发**：N=8\
+      \ perfect-only=2（0.4%）→ N=8 SFT 训练 starvation\n**决策**：SFT 入选从 `is_perfect ==\
+      \ True` 改为 `total_em ≥ 1`（partial-credit）\n**新 Stage 0 真值（D023, stats_d023.json）**：\n\
+      \n| N | new SFT (partial) | DPO pairs |\n|---|-------------------|-----------|\n\
+      | 2 | **806** | 242 |\n| 4 | **471** | 176 |\n| 8 | **487** | 277 |\n| **Total**\
+      \ | **1764** | 695 |\n\nmatched_size_sft = 471（N=4 瓶颈）, matched_size_dpo = 176\n\
+      \n### D024 Token Length Probe + max_length bump (commit 01dc418)\n\n| N | dataset\
+      \ | max tokens |\n|---|---------|-----------|\n| 2 | sft | 1656 |\n| 4 | sft\
+      \ | 2740 |\n| 8 | sft | 4913 |\n\n**Global: p99=4814, max=4913 → 6144 SAFE（20%\
+      \ 余量）**\nSFT/DPO 脚本 max_length 4096→6144。\n\n### Stage 1 代码 Reviewer 三审 — DPO\
+      \ TRL 1.0 fix (commit cd5cc8f)\n\n3 个 bug 修复 + remote smoke PASS：\n- \U0001F534\
+      \ BUG 1: `max_prompt_length` 参数在 TRL 1.0 DPOConfig 已删 → 移除\n- \U0001F7E1 BUG\
+      \ 2: `torch_dtype=` → `dtype=`\n- \U0001F7E1 BUG 3: `warmup_ratio=` → `warmup_steps=`\
+      \ 内联计算\nsmoke: DPO 3-step train loss 0.6931→0.6802, ALL SMOKE CHECKS PASSED\n\
+      \n### D024 hash split reextract — \U0001F504 RUNNING\n\nWorker `worker_code_exp_006_d024_split025_reextract_smoke_persist`\
+      \ 执行 test_frac=0.25 hash split 重提取，完成后 Stage 1 ready for approval。\n\n### Risk\
+      \ #2 字段重命名扫描结论 (2026-04-10, Worker B)\n0 项必须改。所有命中均为各脚本自产自销的局部变量。\n\n### Stage\
+      \ 1 代码 Reviewer 二审（2026-04-10）PASS\nBUG 1 (SFTTrainer save_strategy) / BUG 2\
+      \ (eval em 多答案 split) / Warning (split key 固化) + smoke gate 全部 closed。\n\n###\
+      \ D022 主张指标钉死\n主张指标 = em_partial，em_full 仅作 strict secondary，truncated_rate\
+      \ 作附加诊断。\n\n### D019 Stage 1 训练方案（D023 更新）\n**SFT（pooled，partial-credit）**：1764\
+      \ samples，pooled SFT base（3B LoRA, rank 32）\n**DPO（per-N, matched）**：matched=176\
+      \ DPO pairs per N\n**产出**：4 模型（pooled-SFT baseline + SFT+DPO_N2/N4/N8）\n**评估**：em_partial（主）+\
+      \ em_full（次）+ truncated_rate（诊断）"
+    server: autodl-ltc
+    gpu: cuda:0
+    pid: 84903
+    log_path: /root/autodl-tmp/learned_traj_compress/logs/exp_006_stage0_datagen_v2_n4n8_500.log
+    metrics:
+      n2_prompts: 1000
+      n2_perfect: 490
+      n2_perfect_rate: 0.49
+      n2_sft_samples_perfect_only: 490
+      n2_dpo_pairs: 242
+      n4_prompts: 500
+      n4_perfect: 76
+      n4_perfect_rate: 0.152
+      n4_sft_samples_perfect_only: 76
+      n4_dpo_pairs: 176
+      n8_prompts: 500
+      n8_perfect: 2
+      n8_perfect_rate: 0.004
+      n8_sft_samples_perfect_only: 2
+      n8_dpo_pairs: 277
+      total_sft_samples_perfect_only: 568
+      total_dpo_pairs: 695
+      stage0_status: SUCCESS
+      stage0_elapsed_min: 198.7
+      stage0_completed_at: 2026-04-10T18:39Z
+      sft_inclusion_d023: partial_credit_total_em>=1
+      n2_sft_samples_d023: 806
+      n4_sft_samples_d023: 471
+      n8_sft_samples_d023: 487
+      total_sft_samples_d023: 1764
+      d024_test_frac: 0.25
+      d024_max_length: 6144
+      d024_verdict: 6144_SAFE
+      d024_global_max: 4913
+      d024_n2_sft_train: 510
+      d024_n2_sft_test: 195
+      d024_n2_dpo_train: 154
+      d024_n2_dpo_test: 55
+      d024_n4_sft_train: 299
+      d024_n4_sft_test: 125
+      d024_n4_dpo_train: 109
+      d024_n4_dpo_test: 51
+      d024_n8_sft_train: 309
+      d024_n8_sft_test: 122
+      d024_n8_dpo_train: 171
+      d024_n8_dpo_test: 73
+      d024_n8_test_prompts_unique: 125
+      d024_matched_size_sft_train: 299
+      d024_matched_size_dpo_train: 109
+      d024_matched_bottleneck: N=4
+      d024_re_extract_commit: ac120fa
+      d024_split_fix_commit: 778efea
+      d024_data_leakage_fix: DONE
+      d024_stats_path: /root/autodl-tmp/learned_traj_compress/artifacts/phase1d_v2_data/stats_d024.json
+    conclusion: negative
+  exp_007_phase1c_mlp_probe:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-10T10:18:09.963Z'
+    updated_at: '2026-04-10T15:15:47.597Z'
+    hypothesis: RL 的多目标能力编码在隐藏状态的非线性流形上：MLP probe 可以从 RL 模型的 Δh（activation delta）预测
+      per-objective EM，而线性 probe 不能（Phase 1c 阴性结果）。如果 MLP probe 显著优于线性 probe 且 random
+      feature baseline 不工作，则证明 RL 编码了非线性但结构化的多目标信息。
+    parent: exp_004_phase1c_probing
+    notes: '## NO-GO 结案 (2026-04-10)
+
+
+      ### 硬事实纠正
+
+      - **hidden_dim = 3584**（之前 notes 误记 4096，Qwen2.5-7B 实际为 3584，已纠正）
+
+      - **实际采样 layers**：计划 {0,3,7,11,15,19,23,27}，被 kill 时仅跑完 {0,3,7,11,15,19}（L23/L27
+      未达）
+
+      - **n_samples = 300**（log 确认 "300 prompts built"，不是方案里的 400）
+
+      - **进程终止状态**：reviewer 在 L0–L19 数据上判定方向性已定，2026-04-10 对 PID 299575 发 SIGTERM，进程干净退出；最后到达
+      Layer 19 k=64 末尾 random_feature_mlp control 行（部分保留）。log 保留在 `/root/autodl-tmp/learned_traj_compress/logs/exp_007_mlp_probe.log`
+      (107398 bytes)。
+
+
+      ### 两条 CRITICAL 数据点（证伪假说）
+
+      1. **MLP ρ 几乎全面输给 Linear ρ**（47/55 pairs, 85.5%；paired t = -8.192, p = 4.83e-11,
+      Cohen''s d = -1.105；MLP mean ρ = -0.011, Linear mean ρ = 0.073；mean diff MLP−Linear
+      = -0.084）——与"RL 信息编码在非线性流形上"假说方向性直接冲突。如果存在非线性结构，MLP 应严格 ≥ Linear，实际恰好相反。
+
+      2. **Random feature 噪声带 |ρ| ≤ 0.224**（5 个 delta_h_random bases × 6 layers ×
+      2 k，Linear 侧 |ρ| max = 0.224；MLP 侧 |ρ| max = 0.142，mean -0.035）。n=300 下这个 noise
+      floor 已经吃掉几乎所有真实 feature——55 个 real pairs 中 Linear |ρ| 超过 0.224 的只有 3 个（5.45%）。MLP
+      + Linear 双阴性，"RL 非线性多目标流形"假说被证伪。
+
+
+      ### 结论
+
+      Phase 1c 非线性 probe 假说 NO-GO（confirmed）。不再 resume 跑 L23/L27——方向已定，补完也只能让阴性更阴性。"RL
+      编码非线性流形"叙事从项目中剔除，仅保留降级的"linear subspace / SVD top-k 捕获 RL−base delta"叙事（来自 exp_003
+      SVD 分析），该部分未被此实验触及。
+
+
+      Artifact: `artifacts/exp_007_phase1c_mlp_probe/data/exp_007_mlp_probe_results.json`
+      (120 rows, 12 summary keys)'
+    pid: 299575
+    server: autodl-ltc
+    log_path: /root/autodl-tmp/learned_traj_compress/logs/exp_007_mlp_probe.log
+    conclusion: negative
+    metrics:
+      artifact_path: projects/learned_traj_compress/artifacts/exp_007_phase1c_mlp_probe/data/exp_007_mlp_probe_results.json
+      n_real_pairs: 55
+      mlp_vs_linear_paired_t: -8.192
+      mlp_vs_linear_p: 4.83e-11
+      cohens_d: -1.105
+      mlp_mean_rho: -0.01064
+      linear_mean_rho: 0.07311
+      mean_diff_mlp_minus_linear: -0.0837
+      mlp_better_count: 8
+      linear_better_count: 47
+      mlp_lost_to_linear_pct: 0.8545
+      noise_band_linear_abs_max: 0.224
+      random_baseline_linear_mean: 0.0579
+      random_baseline_linear_std: 0.0757
+      random_baseline_mlp_mean: -0.0346
+      random_baseline_mlp_std: 0.0325
+      real_linear_above_noise_band_count: 3
+      real_linear_above_noise_band_pct: 0.0545
+      layers_covered:
+      - 0
+      - 3
+      - 7
+      - 11
+      - 15
+      - 19
+      ks_covered:
+      - 64
+      - 256
+      n_samples: 300
+  exp_006_phase1d_v2_stage1:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-10T19:16:07.208Z'
+    updated_at: '2026-04-12T06:34:54.934Z'
+    hypothesis: 'Phase 1d Stage 1 训练：pooled SFT (partial-credit, 1118 train) + per-N
+      matched DPO (matched at raw-pair level: subsample to min(raw_pairs)=176 pre-split,
+      yielding ~114/109/114 train after hash split for N=2/4/8 respectively) 验证 DPO
+      是否比 SFT-only 更好保留 RL teacher 的 per-objective EM，特别在高 N (N=8) 时。主张指标 em_partial，Go/Stop
+      阈值 matched N=8 DPO−SFT ≥ 5pp + bootstrap p<0.05。'
+    parent: exp_006_phase1d_v2
+    server: autodl-ltc
+    gpu: cuda:0
+    metrics:
+      sub_models:
+        sft_shared:
+          commit_at_run: 778efea_or_later
+          wandb_run_id: 6184pzxo
+          ckpt_path: checkpoints/exp_006_sft_shared
+          num_train: 1118
+          epochs: 3
+          lr: 0.0002
+          lora_rank: 32
+          status: done
+        dpo_N2:
+          commit_at_run: 382c7f3
+          wandb_run_id: ae4izlex
+          ckpt_path: checkpoints/exp_006_dpo_N2
+          matched_size: 176
+          epochs: 1
+          lr: 2.0e-05
+          beta: 0.05
+          final_train_loss: 0.595
+          final_rewards_margin: 0.207
+          status: done
+        dpo_N4:
+          commit_at_run: 382c7f3
+          ckpt_path: checkpoints/exp_006_dpo_N4
+          matched_size: 176
+          epochs: 1
+          lr: 2.0e-05
+          beta: 0.05
+          final_train_loss: 0.666
+          final_rewards_margin: 0.1
+          status: done
+        dpo_N8:
+          commit_at_run: 382c7f3
+          ckpt_path: checkpoints/exp_006_dpo_N8
+          matched_size: 176
+          epochs: 1
+          lr: 2.0e-05
+          beta: 0.05
+          final_train_loss: 0.678
+          final_rewards_margin: 0.056
+          status: done
+      eval_sft_shared_d031fix:
+        N2:
+          em_partial: 0.1116
+          em_full: 0.012
+          truncated_rate: 0.307
+          prompts: 251
+        N4:
+          em_partial: 0.084
+          em_full: 0
+          truncated_rate: 0.557
+          prompts: 131
+        N8:
+          em_partial: 0.025
+          em_full: 0
+          truncated_rate: 0.832
+          prompts: 125
+      eval_sft_shared:
+        N2:
+          em_partial: 0.1195
+          em_full: 0.012
+          truncated_rate: 0.331
+          prompts: 251
+        N4:
+          em_partial: 0.0782
+          em_full: 0
+          truncated_rate: 0.565
+          prompts: 131
+        N8:
+          em_partial: 0.011
+          em_full: 0
+          truncated_rate: 0.936
+          prompts: 125
+      eval_merged_dpo_N2:
+        N2:
+          em_partial: 0.1275
+        N4:
+          em_partial: 0.0954
+        N8:
+          em_partial: 0.031
+      eval_merged_dpo_N4:
+        N2:
+          em_partial: 0.1275
+        N4:
+          em_partial: 0.0992
+        N8:
+          em_partial: 0.026
+      eval_merged_dpo_N8:
+        N2:
+          em_partial: 0.1295
+        N4:
+          em_partial: 0.0821
+        N8:
+          em_partial: 0.035
+      bootstrap_N8:
+        DPO_N2_vs_SFT:
+          delta: 0.02
+          p: 0.0013
+          ci95:
+          - 0.006
+          - 0.035
+        DPO_N4_vs_SFT:
+          delta: 0.015
+          p: 0.0295
+          ci95:
+          - 0
+          - 0.031
+        DPO_N8_vs_SFT:
+          delta: 0.024
+          p: 0.0003
+          ci95:
+          - 0.01
+          - 0.039
+      bootstrap_N8_d031fix:
+        DPO_N8_vs_SFT_d031fix:
+          N2:
+            delta: 0.018
+            p: 0.046
+            ci95:
+            - -0.002
+            - 0.0378
+          N4:
+            delta: -0.002
+            p: 0.592
+            ci95:
+            - -0.0286
+            - 0.0248
+          N8:
+            delta: 0.01
+            p: 0.163
+            ci95:
+            - -0.009
+            - 0.029
+      go_stop_verdict: STOP
+    notes: '## D032 Eval 全部完成 — Go/Stop 正式判定: STOP
+
+
+      ### SFT Shared 指标对比
+
+
+      **d031fix (max_new_tokens=4096, 公平基线)**:
+
+      | N | em_full | em_partial | truncated_rate | prompts |
+
+      |---|---------|------------|----------------|---------|
+
+      | 2 | 0.0120 | 0.1116 | 30.7% | 251 |
+
+      | 4 | 0.0000 | 0.0840 | 55.7% | 131 |
+
+      | 8 | 0.0000 | 0.0250 | 83.2% | 125 |
+
+
+      **旧 SFT (max_new_tokens=2048, 截断过多)**:
+
+      | N | em_full | em_partial | truncated_rate | prompts |
+
+      |---|---------|------------|----------------|---------|
+
+      | 2 | 0.0120 | 0.1195 | 33.1% | 251 |
+
+      | 4 | 0.0000 | 0.0782 | 56.5% | 131 |
+
+      | 8 | 0.0000 | 0.0110 | 93.6% | 125 |
+
+
+      ### N=8 Paired Bootstrap — 旧基线 (1000 resamples)
+
+      | 对比 | DPO | SFT | Δ | p | 95% CI |
+
+      |------|-----|-----|---|---|--------|
+
+      | DPO_N2 vs SFT | 0.0310 | 0.0110 | +2.0pp | 0.0013 | [+0.6, +3.5]pp |
+
+      | DPO_N4 vs SFT | 0.0260 | 0.0110 | +1.5pp | 0.0295 | [+0.0, +3.1]pp |
+
+      | DPO_N8 vs SFT | 0.0350 | 0.0110 | +2.4pp | 0.0003 | [+1.0, +3.9]pp |
+
+
+      ### N=8 Paired Bootstrap — d031fix 公平基线
+
+      | 对比 | DPO | SFT | Δ | p | 95% CI |
+
+      |------|-----|-----|---|---|--------|
+
+      | DPO_N8 vs SFT (N=2) | 0.1295 | 0.1116 | +1.8pp | 0.046 | [-0.2, +3.8]pp |
+
+      | DPO_N8 vs SFT (N=4) | 0.0821 | 0.0840 | -0.2pp | 0.592 | [-2.9, +2.5]pp |
+
+      | DPO_N8 vs SFT (N=8) | 0.0350 | 0.0250 | +1.0pp | 0.163 | [-0.9, +2.9]pp |
+
+
+      **判定: STOP** — 旧基线下 DPO 显著 (p<0.05) 但 Δ<5pp；公平基线下 DPO 优势进一步缩小到 +1.0pp (p=0.163,
+      不显著)。旧 bootstrap 的显著性部分来自 SFT 截断过多导致基线人为偏低。'
+    conclusion: negative
+  exp_006_eval_d029:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T03:27:23.146Z'
+    updated_at: '2026-04-11T07:34:50.346Z'
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-11T03:27:23.186142+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-11T03:27:23.901390+00:00'
+    reproduce:
+      finished_at: '2026-04-11T03:27:26.154Z'
+    notes: 'D031 superseded: max_new_tokens=2048 导致 N=8 truncated_rate=93.6%，结果不可信。旧进程
+      PID=138779 被 kill。新 eval exp_006_eval_d031（max_new_tokens=4096）已启动替代。'
+  exp_006_eval_d031:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T07:31:51.931Z'
+    updated_at: '2026-04-11T14:24:36.698Z'
+    hypothesis: 'D031: 重跑全量 eval（max_new_tokens=4096），修复 2048 截断问题。4 模型 × 3 测试集。'
+    parent: exp_006_phase1d_v2_stage1
+    notes: 进程在加载 base model 权重(Qwen2.5-3B)后静默终止，无 error/traceback 输出，疑似 OOM/Killed。日志仅
+      13 行，停在 Loading weights 100%。无结果文件产出。
+    conclusion: failed
+  exp_006_eval_d031_fix_dpo_N8:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:24:06.018Z'
+    updated_at: '2026-04-11T14:24:25.003Z'
+    conclusion: failed
+    notes: Process silently killed at [10/251] during N=2 eval. Log has only 18 lines,
+      no error/traceback. Likely OOM (model loaded base+SFT+DPO adapters). No eval
+      results produced.
+  exp_006_eval_d030_dpo:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:24:34.981Z'
+    updated_at: '2026-04-11T14:24:47.312Z'
+    conclusion: failed
+    notes: DPO eval killed (Terminated signal) during N=4 evaluation at prompt 10/131.
+      SFT eval completed OK. DPO N=2 completed (em_full=0.0040, em_partial=0.1096,
+      trunc=31.5%). DPO N=4 and N=8 not completed.
+  exp_006_eval_d031_fix_dpo_N4_v2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:24:46.916Z'
+    updated_at: '2026-04-11T14:25:00.186Z'
+    conclusion: failed
+    notes: Silent kill (likely OOM) during N=2 eval at prompt 10/251. Log only 13
+      lines, no error output. No result files produced.
+  exp_006_eval_d031_fix_dpo_N4:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:24:57.127Z'
+    updated_at: '2026-04-11T14:25:12.688Z'
+    conclusion: failed
+    notes: Eval process killed silently at N=2 [20/251]. Log has only 19 lines, no
+      Error/Traceback/OOM message. No result JSON produced. Likely OOM killed by system.
+  exp_006_eval_d031_fix_dpo_N2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:24:58.228Z'
+    updated_at: '2026-04-11T14:25:13.318Z'
+    conclusion: failed
+    notes: 3 attempts (d031fix, v2, v3) all silently killed at 10-20/251 prompts.
+      No Traceback/Error in logs, no results files produced. Likely OOM during generation
+      with max_new_tokens=4096 on 3B model.
+  exp_006_eval_d031_fix_dpo_N2_v2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:25:23.770Z'
+    updated_at: '2026-04-11T14:25:36.850Z'
+    conclusion: failed
+    notes: 'Eval failed: process killed at 10/251 prompts, log only 13 lines, no error
+      in log, no results produced. Likely OOM kill.'
+  exp_006_eval_d031_fix_dpo_N8_v2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:25:30.564Z'
+    updated_at: '2026-04-11T14:25:49.642Z'
+    conclusion: failed
+    notes: Retry of exp_006_eval_d031_fix_dpo_N8. Process silently killed at [10/251]
+      during N=2 eval — identical failure pattern. Log 1434 bytes, no Error/Traceback/OOM
+      in output. No result JSON produced. Likely OOM killed by system (base+SFT+DPO
+      adapters + max_new_tokens=4096 on 3B model).
+  exp_006_eval_merged_N2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:42:19.070Z'
+    updated_at: '2026-04-12T04:31:18.326Z'
+    hypothesis: 'D032: Merged DPO N=2 eval (max_new_tokens=4096), merged checkpoint
+      消除三层 adapter OOM'
+    notes: 'D032 merged DPO N=2 eval 完成（~13.8h）。N=2 em_partial=0.1275, N=4 em_partial=0.0954,
+      N=8 em_partial=0.0310。结果文件: /root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval/eval_merged_N2.json'
+    conclusion: success
+    metrics:
+      model: merged_dpo_N2
+      elapsed_seconds: 49795
+      results_path: /root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval/eval_merged_N2.json
+      N2:
+        em_full: 0.0199
+        em_partial: 0.1275
+        truncated_rate: 0.303
+        prompts: 251
+      N4:
+        em_full: 0
+        em_partial: 0.0954
+        truncated_rate: 0.534
+        prompts: 131
+      N8:
+        em_full: 0
+        em_partial: 0.031
+        truncated_rate: 0.84
+        prompts: 125
+  exp_006_eval_merged_N4:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:42:20.101Z'
+    updated_at: '2026-04-12T04:24:02.580Z'
+    hypothesis: 'D032: Merged DPO N=4 eval (max_new_tokens=4096), merged checkpoint
+      消除三层 adapter OOM'
+    conclusion: success
+    metrics:
+      model: merged_dpo_N4
+      elapsed_seconds: 48950
+      results_path: /root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval/eval_merged_N4.json
+      N2:
+        em_full: 0.0159
+        em_partial: 0.1275
+        truncated_rate: 0.275
+        prompts: 251
+      N4:
+        em_full: 0
+        em_partial: 0.0992
+        truncated_rate: 0.519
+        prompts: 131
+      N8:
+        em_full: 0
+        em_partial: 0.026
+        truncated_rate: 0.84
+        prompts: 125
+    notes: 'D032 merged DPO N=4 eval 完成（~13.6h）。N=2 em_partial=0.1275, N=4 em_partial=0.0992,
+      N=8 em_partial=0.0260。truncated_rate 随 N 急剧恶化（27.5%→84.0%）。结果文件: /root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval/eval_merged_N4.json'
+  exp_006_eval_merged_N8:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-11T14:42:20.794Z'
+    updated_at: '2026-04-12T04:57:46.955Z'
+    hypothesis: 'D032: Merged DPO N=8 eval (max_new_tokens=4096), merged checkpoint
+      消除三层 adapter OOM'
+    conclusion: success
+    metrics:
+      model: merged_dpo_N8
+      results_path: /root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval/eval_merged_N8.json
+      N2:
+        em_full: null
+        em_partial: 0.1295
+        truncated_rate: null
+        prompts: 251
+      N4:
+        em_full: null
+        em_partial: 0.0821
+        truncated_rate: null
+        prompts: 131
+      N8:
+        em_full: null
+        em_partial: 0.035
+        truncated_rate: null
+        prompts: 125
+    notes: 'D032 merged DPO N=8 eval 完成。N=2 em_partial=0.1295, N=4 em_partial=0.0821,
+      N=8 em_partial=0.0350。Paired bootstrap vs 旧 SFT (2048 tokens): N=8 delta=+2.4pp,
+      p<0.001, 95% CI [+1.0, +3.9]pp — 但 SFT 数据因 truncation 93.6% 严重低估，需等 d031fix
+      完成后重跑。结果文件: /root/autodl-tmp/learned_traj_compress/artifacts/exp_006_eval/eval_merged_N8.json'
+  exp_008_search_suppression:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T06:22:00.776Z'
+    updated_at: '2026-04-12T06:37:15.816Z'
+    hypothesis: 'D034: Search token suppression 验证 behavioral mismatch 假说。在 eval 生成时通过
+      bad_words_ids 抑制 <search>/<information> 等搜索相关 token，强制模型直接输出 <answer>。如果抑制后
+      em_partial 显著恢复（>5pp）且 truncated_rate 大幅下降，则确认 behavioral mismatch 是蒸馏失败的可诊断根因。eval-only，无训练。'
+    parent: exp_006_phase1d_v2_stage1
+    notes: '## exp_008 设计方案
+
+
+      ### 第一次提交失败（两个问题）
+
+      1. **cd builtin bug**: EXIT_CODE=127，与 exp_002v2 同一问题。需用 bash -c 包装
+
+      2. **Token 编码问题**: `<search>` 等 XML tags 在 Qwen2.5-3B tokenizer 中是多 token (各
+      3 tokens)，bad_words_ids 对多 token 序列只阻止最终 token
+
+
+      ### 修复方案
+
+      - Token suppression: 改为 suppress 关键 sub-tokens [[1836], [25069]]（"search" 和
+      "information" 独立 token）
+
+      - 提交命令: bash -c 包装
+
+
+      ### 原始设计
+
+      验证 behavioral mismatch 假说：在 eval 生成时抑制搜索相关 token，强制模型直接输出 answer。
+
+      - 4 模型 × 3 测试集，baseline 复用已有结果
+
+      - Go/Stop: em_partial 恢复 >5pp + truncated_rate 下降 >20pp → 确认 behavioral mismatch'
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T06:32:28.462Z'
+      command: cd /root/autodl-tmp/learned_traj_compress && source .venv/bin/activate
+        && bash scripts/exp_008_search_suppression_eval.sh
+      code_commit: 8d3344d396a0775b2e7be8081b1163bb39fc47f4
+      finished_at: '2026-04-12T06:34:48.208Z'
+      training_hours: 0.04
+    pid: unknown
+    log_path: ~/runs/learned_traj_compress/exp_008_search_suppression.log
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T06:34:48.384960+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T06:34:49.118047+00:00'
+  exp_008_search_suppression_v2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T06:38:19.110Z'
+    updated_at: '2026-04-12T06:45:09.877Z'
+    hypothesis: 'D034: Search token suppression v2 (bigram bad_words_ids)。用 2-token
+      序列 [[27,1836],[522,1836],[27,25069],[522,25069]] 精确阻止 <search>/<information>
+      XML tags，不影响正常文本。验证 behavioral mismatch 假说。'
+    parent: exp_008_search_suppression
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T06:40:55.108Z'
+      command: bash -c "cd /root/autodl-tmp/learned_traj_compress && source .venv/bin/activate
+        && bash scripts/exp_008_search_suppression_eval.sh"
+      code_commit: 3904ae231b8a1bf05814b9106a5772285d90a3d1
+      finished_at: '2026-04-12T06:43:25.795Z'
+      training_hours: 0.04
+    pid: unknown
+    log_path: ~/runs/learned_traj_compress/exp_008_search_suppression_v2.log
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T06:43:25.985433+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T06:43:26.710117+00:00'
+    notes: '失败原因: infrastructure — 提交命令中 venv 路径错误。日志仅 4 行：`bash: line 1: .venv/bin/activate:
+      No such file or directory`，EXIT_CODE=1。`.venv/bin/activate` 是相对路径，在提交命令的工作目录下不存在。需修正为绝对路径（如
+      `/root/autodl-tmp/learned_traj_compress/.venv/bin/activate`）或先 cd 到项目目录。建议:
+      修正 venv 路径后重新提交。'
+  exp_006_eval_d031_fix_sft_shared:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T06:41:55.904Z'
+    updated_at: '2026-04-12T06:42:07.240Z'
+    conclusion: success
+    notes: 'SFT d031fix eval 完成 (max_new_tokens=4096)。N=2 em_partial=0.1116, N=4=0.084,
+      N=8=0.025, truncated_rate N=8=83.2%。Bootstrap vs DPO_N8: N=8 delta=+1.0pp, p=0.163
+      (不显著)。结果已写入 exp_006_phase1d_v2_stage1 metrics。'
+  exp_008_search_suppression_v3:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T06:55:18.411Z'
+    updated_at: '2026-04-12T07:23:39.345Z'
+    hypothesis: 'D034: Search token suppression v3 (bigram bad_words_ids, 修复 venv
+      路径)。用 2-token 序列 [[27,1836],[522,1836],[27,25069],[522,25069]] 精确阻止 <search>/<information>
+      XML tags。验证 behavioral mismatch 假说。'
+    parent: exp_008_search_suppression_v2
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T06:58:16.689Z'
+      command: bash -c "cd /root/autodl-tmp/learned_traj_compress && bash scripts/exp_008_search_suppression_eval.sh"
+      code_commit: 3904ae231b8a1bf05814b9106a5772285d90a3d1
+    pid: '200285'
+    log_path: ~/runs/learned_traj_compress/exp_008_search_suppression_v3.log
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T07:19:54.829994+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T07:19:55.771354+00:00'
+    notes: 运行 ~21 分钟后失败。SSH 连接 autodl-ltc (端口 42837) 超时，实例疑似被回收/重启。无法读取日志或检查部分结果。DPO
+      merge 脚本（CPU 后台运行）同样无法确认状态。需等 AutoDL 实例恢复 + 更新 SSH 端口后重新排查。
+  exp_008_search_suppression_v4:
+    status: DONE
+    retry_count: 1
+    created_at: '2026-04-12T09:17:47.531Z'
+    updated_at: '2026-04-12T12:35:10.307Z'
+    hypothesis: Search token suppression (bad_words_ids blocking <search>/<information>
+      bigrams) will reduce truncation rate and recover em_partial if behavioral mismatch
+      is a contributing factor to distillation failure
+    parent: exp_006_phase1d_v2
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T09:30:15.841801+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T09:30:17.458869+00:00'
+      previous_failure:
+        conclusion: failed
+        notes: D036 判定失败。三个问题：(1) 进程被 AutoDL 调度器 kill；(2) bigram bad_words_ids suppression
+          未生效——模型通过 tag 变体（spacing/casing changes）绕过 token-level 阻止；(3) 结论：procedural
+          behavior 编码在比 surface token pattern 更深的层面，token-level suppression 无法作为 behavioral
+          mismatch 的因果验证手段。已在 §3.4 脚注中记录 pilot 结果。Plan A 降级生效。
+    notes: D041 终止。Token-level suppression 未生效：bigram bad_words_ids 未匹配实际 tokenization，`<search>`
+      仍被生成但闭合标签损坏导致格式错误。em=0 是格式损坏而非移除 search 结构的因果效应。PID 1774 已 kill。
+    conclusion: failed
+  exp_009_student_with_api:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T11:54:39.775Z'
+    updated_at: '2026-04-12T16:18:04.832Z'
+    hypothesis: SFT student 的低 EM 主要因为 hallucinated search traces（有搜索策略但无 API 执行能力）。给
+      student 接入与 teacher 相同的 FlashRAG retrieval API 后，em_partial 应显著提升，提供 behavioral
+      mismatch 的因果证据。
+    parent: exp_006_phase1d_v2_stage1
+    notes: '## exp_009 完成 — 因果证据成立
+
+
+      ### 最终结果（oracle 模式）
+
+
+      | N | SFT 无 API | SFT + oracle API | Δ | RL teacher |
+
+      |---|-----------|-----------------|------|-----------|
+
+      | 2 | 0.1116 | 0.5299 | +41.8pp | 0.59 |
+
+      | 4 | 0.084 | 0.5210 | +43.7pp | 0.54 |
+
+      | 8 | 0.025 | 0.4980 | +47.3pp | 0.455 |
+
+
+      - trunc=0.0% 全部（无 API 时 N=8 trunc=83.2%）
+
+      - avg_searches=1.0 全部（SFT 只学到单轮搜索，未学多轮迭代）
+
+      - em_full: N=2=0.2908, N=4=0.0534, N=8=0.008（em_full 低因为只做 1 次搜索覆盖部分 objectives）
+
+      - 耗时 2327s (~39 min)
+
+
+      ### Strategy Analysis (D047 补充)
+
+
+      **关键修正：Teacher 本身也 >95% 只搜一次。** 原因是 assistant_prefix 已含首轮搜索结果，teacher trajectory
+      以单次搜索为主。Strategy simplification 不是 student 独有问题。
+
+
+      - Teacher avg_searches: N=2=1.044, N=4=1.012, N=8=1.060（>95% 单次搜索）
+
+      - Student query quality: Jaccard similarity ~0.95 vs teacher（几乎完美复现）
+
+      - Per-objective EM 无单调递减：各 objective 准确率 38-58% 范围波动
+
+      - em_full 低的真因：概率叠加。单个 objective ~50% → N=8 全对 ≈ 0.5^8 ≈ 0.4%
+
+
+      ### 文件
+
+      - 脚本: scripts/eval_sft_with_api.py
+
+      - 结果: artifacts/exp_009_eval/eval_sft_shared_api_oracle.json
+
+      - 分析: artifacts/exp_009_eval/strategy_analysis.json
+
+      - 日志: /root/runs/learned_traj_compress/exp_009_oracle.log'
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T11:56:06.649Z'
+      finished_at: '2026-04-12T13:29:37.440Z'
+      training_hours: 1.56
+    extra:
+      hook_events:
+      - event: on_complete
+        action: autodl_release
+        ts: '2026-04-12T13:29:37.591196+00:00'
+      - event: on_complete
+        action: agent
+        ts: '2026-04-12T13:29:39.785055+00:00'
+    conclusion: success
+    metrics:
+      oracle_N2:
+        em_partial: 0.5299
+        em_full: 0.2908
+        truncated_rate: 0
+        avg_searches: 1
+        prompts: 251
+      oracle_N4:
+        em_partial: 0.521
+        em_full: 0.0534
+        truncated_rate: 0
+        avg_searches: 1
+        prompts: 131
+      oracle_N8:
+        em_partial: 0.498
+        em_full: 0.008
+        truncated_rate: 0
+        avg_searches: 1
+        prompts: 125
+      baseline_sft_N2:
+        em_partial: 0.1116
+      baseline_sft_N4:
+        em_partial: 0.084
+      baseline_sft_N8:
+        em_partial: 0.025
+      delta_N2: 0.4183
+      delta_N4: 0.437
+      delta_N8: 0.473
+      bootstrap_N2:
+        delta: 0.4183
+        p: 0.0001
+        ci95:
+        - 0.3705
+        - 0.4661
+      bootstrap_N4:
+        delta: 0.437
+        p: 0.0001
+        ci95:
+        - 0.3931
+        - 0.479
+      bootstrap_N8:
+        delta: 0.473
+        p: 0.0001
+        ci95:
+        - 0.438
+        - 0.508
+      bootstrap_resamples: 10000
+      strategy_analysis:
+        teacher_avg_searches_N2: 1.044
+        teacher_avg_searches_N4: 1.012
+        teacher_avg_searches_N8: 1.06
+        teacher_single_search_pct: '>95%'
+        query_jaccard_mean: 0.95
+        query_jaccard_median: 1
+        query_n: 507
+        per_obj_accuracy_range: 38-58%
+        emfull_probability_stacking: 0.5^N matches observed
+  exp_010_7b_sft_eval:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T14:03:01.217Z'
+    updated_at: '2026-04-12T15:26:01.287Z'
+    hypothesis: 7B full-rank SFT-N2 在 N=2 eval 上的 em_partial 远低于 RL teacher（0.59）。如果是，则
+      capacity gap（7B→3B）不是 SFT collapse 的主因，SFT 方法本身是瓶颈。
+    parent: exp_004_phase1c_probing
+    notes: "## 实验方案（D042 修正）\n\n### 目的\nRound 2 C1 修复：隔离 capacity confound。7B full-rank\
+      \ SFT 只在 N=2 数据上训练，因此只做 N=2 eval。\n\n### 设计\n- 模型：Qwen2.5-7B-SFT-N2（exp_004\
+      \ 产出，用于 SVD 三模型对比）\n  - 路径：/root/autodl-tmp/models/Qwen2.5-7B-SFT-N2\n- 测试集：phase1d_v2\
+      \ N=2 test set（251 prompts）\n- **只做 N=2 eval**（7B SFT-N2 只在 N=2 数据上训练，N=4/N=8\
+      \ 无意义）\n- 评估指标：em_partial, em_full, truncated_rate\n- max_new_tokens=4096\n\n\
+      ### Baseline 对比\n- 3B SFT pooled (d031fix) N=2: em_partial=0.1116\n- RL teacher\
+      \ N=2: em_partial=0.59\n\n### 逻辑\n- 如果 7B SFT-N2 at N=2 也远低于 teacher → capacity\
+      \ 不是主因，SFT 方法本身是瓶颈\n- 如果 7B SFT-N2 at N=2 接近 teacher → 再讨论是否需要 7B pooled SFT\n\
+      \n### 资源\n纯 inference，~30min GPU（autodl-ltc cuda:0，仅 251 prompts）"
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T14:08:29.763Z'
+    metrics:
+      em_partial_N2: 0.1215
+      em_full_N2: 0.0239
+      truncated_rate_N2: 0.9841
+      n_prompts: 251
+    conclusion: success
+  exp_011_bm25_retrieval:
+    status: DONE
+    retry_count: 3
+    created_at: '2026-04-12T16:09:45.375Z'
+    updated_at: '2026-04-12T17:32:34.787Z'
+    hypothesis: SFT student + BM25 检索（realistic setting）在 N=2/4/8 上的 em_partial 显著高于无
+      API baseline，且接近 oracle 上界。填补 oracle upper-bound 和 no-API baseline 之间的 gap，证明
+      behavioral mismatch 在实际检索场景下仍可恢复。
+    parent: exp_009_student_with_api
+    notes: '## exp_011 完成 — BM25 realistic retrieval baseline
+
+
+      ### 最终结果
+
+
+      | N | em_partial | em_full | trunc | avg_searches | prompts |
+
+      |---|-----------|---------|-------|-------------|---------|
+
+      | 2 | **0.2032** | 0.0359 | 0.0% | 1.20 | 251 |
+
+      | 4 | **0.1469** | 0.0000 | 0.0% | 1.16 | 131 |
+
+      | 8 | **0.1470** | 0.0000 | 0.0% | 1.09 | 125 |
+
+
+      ### Baseline 对比 (em_partial)
+
+
+      | N | 无 API | BM25 | Oracle | RL teacher |
+
+      |---|--------|------|--------|-----------|
+
+      | 2 | 0.112 | 0.203 (+9.2pp) | 0.530 | 0.59 |
+
+      | 4 | 0.084 | 0.147 (+6.3pp) | 0.521 | 0.54 |
+
+      | 8 | 0.025 | 0.147 (+12.2pp) | 0.498 | 0.455 |
+
+
+      ### 结论
+
+      BM25 retrieval 在所有 N 上显著高于无 API baseline，特别是 N=8 提升最大（+12.2pp）。但距离 oracle 仍有很大
+      gap（oracle 是 BM25 的 2.6-3.6x），说明 BM25 检索质量是瓶颈——student 的 query 虽然 Jaccard=0.95
+      匹配 teacher，但 BM25 的 top-4 召回远不如 oracle 精确注入。
+
+
+      总耗时 ~68 min（含 N=8 中断重跑）。'
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T16:15:01.049994+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T16:15:01.796166+00:00'
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T16:19:11.538587+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T16:19:12.508609+00:00'
+      - event: on_complete
+        action: autodl_release
+        ts: '2026-04-12T17:31:41.041958+00:00'
+      - event: on_complete
+        action: agent
+        ts: '2026-04-12T17:31:42.064078+00:00'
+      previous_failure:
+        conclusion: failed
+        notes: '## 实验方案
+
+
+          ### 目的
+
+          Camera-ready 补充实验：填补 oracle upper-bound 和 no-API baseline 之间的 gap。
+
+
+          ### 设计
+
+          - 脚本: scripts/eval_sft_with_api.py --retrieval_mode bm25
+
+          - 模型: 3B SFT shared (checkpoints/exp_006_sft_shared)
+
+          - BM25 corpus: 从 phase1d_v2_data 的训练轨迹自动构建
+
+          - 测试集: phase1d_v2 test set (N=2: 251, N=4: 131, N=8: 125 prompts)
+
+          - max_new_tokens=4096, max_search_rounds=10
+
+
+          ### Baseline 对比
+
+          - 无 API: N=2=0.1116, N=4=0.084, N=8=0.025
+
+          - Oracle API: N=2=0.530, N=4=0.521, N=8=0.498
+
+          - RL teacher: N=2=0.59, N=4=0.54, N=8=0.455
+
+
+          ### 资源
+
+          纯 inference，~2h GPU（autodl-ltc cuda:0）
+
+
+          ### 第一次提交失败 (2026-04-12)
+
+          失败原因: infrastructure — `cd` builtin bug (EXIT_CODE=127)。修复: bash -c 包装。
+
+
+          ### 第二次提交失败 (2026-04-12)
+
+          失败原因: infrastructure — `.venv/bin/activate: No such file or directory`。venv
+          不存在于 `/root/autodl-tmp/learned_traj_compress/`。已 spawn worker 诊断正确的 Python
+          环境路径。
+
+          fix_worker_id: worker_diagnose_exp_011_bm25_retrieval_20260412T161958'
+    server: autodl-ltc
+    gpu: cuda:0
+    pid: '23498'
+    log_path: ~/runs/learned_traj_compress/exp_011_bm25_retrieval.log
+    reproduce:
+      command: bash -c "source /etc/network_turbo; source /root/miniconda3/etc/profile.d/conda.sh
+        && conda activate base && cd /root/autodl-tmp/learned_traj_compress && python
+        scripts/eval_sft_with_api.py --model_path /root/autodl-tmp/models/Qwen2.5-3B
+        --sft_adapter checkpoints/exp_006_sft_shared --retrieval_mode bm25 --data_dir
+        artifacts/phase1d_v2_data --output_dir artifacts/exp_011_eval --max_new_tokens
+        4096 --max_search_rounds 10 --n_values 2 4 8"
+      code_commit: 3d9d0615e189fb9d7ab1f274798a339634f7c7d1
+      finished_at: '2026-04-12T17:31:40.902Z'
+    metrics:
+      bm25_N2:
+        em_partial: 0.2032
+        em_full: 0.0359
+        truncated_rate: 0
+        avg_searches: 1.2
+        prompts: 251
+      bm25_N4:
+        em_partial: 0.1469
+        em_full: 0
+        truncated_rate: 0
+        avg_searches: 1.2
+        prompts: 131
+      bm25_N8:
+        em_partial: 0.147
+        em_full: 0
+        truncated_rate: 0
+        avg_searches: 1.1
+        prompts: 125
+      delta_vs_noapi_N2: 0.0916
+      delta_vs_noapi_N4: 0.0629
+      delta_vs_noapi_N8: 0.122
+      elapsed_seconds: 4066
+      results_path: artifacts/exp_011_eval/eval_sft_shared_api_bm25.json
+    conclusion: success
+  exp_012_7b_pooled_sft:
+    status: DONE
+    retry_count: 1
+    created_at: '2026-04-12T16:10:04.765Z'
+    updated_at: '2026-04-12T18:07:43.851Z'
+    hypothesis: 7B full-rank pooled SFT（N=2+4+8 mixed data）与 3B LoRA pooled SFT 在相同
+      test set 上对比，完整隔离 capacity factor。如果 7B pooled ≈ 3B pooled across all N，则 capacity
+      gap 非主因；如果 7B pooled >> 3B pooled，则需修正 method-driven 结论。
+    parent: exp_010_7b_sft_eval
+    notes: '## exp_012 7B Pooled SFT
+
+
+      ### 训练完成
+
+      - 2 epochs, 560 steps, 1172s (~19.5 min)
+
+      - Final train_loss: 0.8293
+
+      - Loss 趋势: Epoch 1 ~0.85-0.91 → Epoch 2 ~0.65-0.73，收敛正常
+
+      - 模型: /root/autodl-tmp/models/Qwen2.5-7B-SFT-Pooled
+
+
+      ### 待 Eval
+
+      需要在 N=2/4/8 test set 上评估 em_partial/em_full/truncated_rate'
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T17:33:08.268Z'
+      command: bash -c 'source /etc/network_turbo; source /root/miniconda3/etc/profile.d/conda.sh
+        && conda activate base && cd /root/autodl-tmp/learned_traj_compress && /root/miniconda3/bin/python3
+        scripts/train_sft_baseline.py --base_dir /root/autodl-tmp/models/Qwen2.5-7B
+        --output_dir /root/autodl-tmp/models/Qwen2.5-7B-SFT-Pooled --pooled_data_dir
+        artifacts/phase1d_v2_data --max_seq_length 6144 --num_epochs 2 --lr 2e-5'
+      code_commit: 3d9d0615e189fb9d7ab1f274798a339634f7c7d1
+      finished_at: '2026-04-12T17:40:56.357Z'
+      training_hours: 0.13
+    log_path: ~/runs/learned_traj_compress/exp_012_7b_pooled_sft.log
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T17:35:44.799001+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T17:35:45.712784+00:00'
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-12T17:40:55.157707+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-12T17:40:56.165081+00:00'
+      previous_failure:
+        conclusion: failed
+        notes: '## 实验方案
+
+
+          ### 目的
+
+          完整 capacity isolation。exp_010 仅用 7B SFT-N2 数据，此实验用 pooled 数据 clean comparison。
+
+
+          ### 设计
+
+          - 训练脚本: scripts/train_sft_baseline.py（需修改支持 pooled data input）
+
+          - 模型: Qwen2.5-7B full-rank SFT
+
+          - 数据: phase1d_v2_data pooled SFT (N=2+4+8, 1764 samples, partial-credit)
+
+          - 超参: lr=2e-5, epochs=2, batch=1, grad_accum=4, max_seq=6144, bf16, gradient_checkpointing
+
+          - Eval: phase1d_v2 test set N=2/4/8 (251/131/125 prompts), max_new_tokens=4096
+
+
+          ### Baseline 对比
+
+          - 3B LoRA pooled SFT: N=2=0.112, N=4=0.084, N=8=0.025
+
+          - 7B SFT-N2 (exp_010): N=2=0.122 (但仅 N=2 数据训练)
+
+          - RL teacher: N=2=0.59, N=4=0.54, N=8=0.455
+
+
+          ### 资源
+
+          训练 ~3-4h + eval ~1h, GPU (autodl-ltc cuda:0)
+
+
+          ### 第一次提交失败 (2026-04-12)
+
+          **失败原因**: train_sft_baseline.py 不支持 `--pooled_data_dir` 和 `--max_seq_length`
+          参数（argparse unrecognized arguments, EXIT_CODE=2）。脚本需先修改支持 pooled data input
+          再重新提交。'
+    pid: '27118'
+    conclusion: failed
+  exp_012_7b_pooled_sft_v2:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-12T17:40:49.376Z'
+    updated_at: '2026-04-12T22:24:09.705Z'
+    hypothesis: 7B full-rank pooled SFT（N=2+4+8 mixed data）与 3B LoRA pooled SFT 在相同
+      test set 上对比，完整隔离 capacity factor。如果 7B pooled ≈ 3B pooled across all N，则 capacity
+      gap 非主因；如果 7B pooled >> 3B pooled，则需修正 method-driven 结论。
+    parent: exp_012_7b_pooled_sft
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      started_at: '2026-04-12T17:41:02.385Z'
+      command: bash -c 'source /etc/network_turbo; source /root/miniconda3/etc/profile.d/conda.sh
+        && conda activate base && cd /root/autodl-tmp/learned_traj_compress && python
+        scripts/train_sft_baseline.py --base_dir /root/autodl-tmp/models/Qwen2.5-7B
+        --output_dir /root/autodl-tmp/models/Qwen2.5-7B-SFT-Pooled --pooled_data_dir
+        artifacts/phase1d_v2_data --max_seq_length 6144 --num_epochs 2 --lr 2e-5 --batch_size
+        1 --grad_accum 4 --gradient_checkpointing --bf16'
+      code_commit: 6248c965217959c45ea14190daee7585ee9705f0
+    pid: '27741'
+    log_path: ~/runs/learned_traj_compress/exp_012_7b_pooled_sft_v2.log
+    metrics:
+      N2:
+        em_partial: 0.1713
+        em_full: 0.0398
+        truncated_rate: 0.167
+        prompts: 251
+      N4:
+        em_partial: 0.1469
+        em_full: 0
+        truncated_rate: 0.298
+        prompts: 131
+      N8:
+        em_partial: 0.079
+        em_full: 0
+        truncated_rate: 0.608
+        prompts: 125
+    notes: '7B full-rank pooled SFT eval complete. Training: 560 steps, loss=0.8293,
+      19.5min. Eval: N2 em_partial=0.1713 em_full=0.0398 trunc=16.7% (251p) | N4 em_partial=0.1469
+      em_full=0.0 trunc=29.8% (131p) | N8 em_partial=0.079 em_full=0.0 trunc=60.8%
+      (125p). vs 3B baseline: +53.5%/+74.9%/+216% em_partial improvement for N=2/4/8.
+      Truncation reduced by 14-26pp across all N.'
+    conclusion: success
+  exp_013_w2_cross_backbone_llama1b:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-13T17:38:20.335Z'
+    updated_at: '2026-04-14T00:17:23.299Z'
+    hypothesis: 'W2 cross-backbone generality: distilling the same MEM1 RL teacher
+      (Qwen2.5-7B) into Llama-3.2-1B (cross-family, non-Qwen student) via the identical
+      SFT pipeline (1,118 trajectories, rank-32 LoRA on attn+MLP) will reproduce the
+      silent failure mode: format-level metrics (tool-call syntax, balanced XML tags,
+      non-empty queries) ≈100%, content-level metrics (BLEU, ROUGE-L) near-floor,
+      em_full ≈0 at N=8, and oracle retrieval ablation recovers em_partial by ≥30pp.
+      If replicate: story upgrades from case study to systematic failure mode across
+      SFT distillation. If replicate fails (Llama-1B doesn''t exhibit silent failure):
+      pivot to "backbone-dependent failure, why Qwen is fragile" — more interesting
+      finding either way.'
+    parent: exp_012_7b_pooled_sft_v2
+    server: autodl-ltc
+    gpu: cuda:0
+    account: root
+    reproduce:
+      server: autodl-ltc
+      gpu: cuda:0
+      account: root
+      code_commit: 79a4102
+      base_model: unsloth/Llama-3.2-1B
+      command: set -eo pipefail; source /etc/network_turbo; source /root/miniconda3/etc/profile.d/conda.sh
+        && conda activate base && cd /root/autodl-tmp/learned_traj_compress && export
+        CUDA_VISIBLE_DEVICES=0 WANDB_MODE=offline && python scripts/exp_013_sft_llama.py
+        2>&1 | tee artifacts/exp_013/sft_train.log && python scripts/exp_006_stage1_eval.py
+        --model_path /root/autodl-tmp/models/Llama-3.2-1B --sft_adapter artifacts/exp_013/sft_llama1b
+        --model_name exp_013_sft_llama1b --output_dir artifacts/exp_013/eval_no_api
+        2>&1 | tee artifacts/exp_013/eval_no_api.log && python scripts/eval_sft_with_api.py
+        --model_path /root/autodl-tmp/models/Llama-3.2-1B --sft_adapter artifacts/exp_013/sft_llama1b
+        --retrieval_mode oracle --output_dir artifacts/exp_013/eval_oracle 2>&1 |
+        tee artifacts/exp_013/eval_oracle.log && python scripts/eval_sft_with_api.py
+        --model_path /root/autodl-tmp/models/Llama-3.2-1B --sft_adapter artifacts/exp_013/sft_llama1b
+        --retrieval_mode bm25 --output_dir artifacts/exp_013/eval_bm25 2>&1 | tee
+        artifacts/exp_013/eval_bm25.log
+    pid: 10021
+    log_path: ~/runs/learned_traj_compress/exp_013_w2_cross_backbone_llama1b.log
+    metrics:
+      no_api:
+        N2:
+          em_partial: 0.0737
+          em_full: 0.004
+          truncated_rate: 0.2988
+        N4:
+          em_partial: 0.063
+          em_full: 0
+          truncated_rate: 0.5115
+        N8:
+          em_partial: 0.014
+          em_full: 0
+          truncated_rate: 0.856
+      oracle:
+        N2:
+          em_partial: 0.4104
+          truncated_rate: 0
+        N4:
+          em_partial: 0.4008
+          truncated_rate: 0
+        N8:
+          em_partial: 0.351
+          truncated_rate: 0
+      bm25:
+        N2:
+          em_partial: 0.1355
+          em_full: 0.0279
+          truncated_rate: 0
+        N4:
+          em_partial: 0.0935
+          em_full: 0
+          truncated_rate: 0
+        N8:
+          em_partial: 0.066
+          em_full: 0
+          truncated_rate: 0
+      surface_metrics_N8:
+        tool_call_syntax: 1
+        tool_call_balanced_tags: 1
+        tool_call_queries_nonempty: 1
+        action_sequence_accuracy: 0.6058
+        bleu: 1.1618
+        rouge_l: 0.2124
+      sft_train:
+        train_loss: 1.086
+        eval_loss: 1.029
+        token_acc: 0.7665
+        steps: 420
+    wandb_run_id: a5ic3kvi
+    conclusion: success
+  exp_014_svd_weight_transplant_7b_7b:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-14T02:30:14.896Z'
+    updated_at: '2026-04-14T05:05:07.244Z'
+    hypothesis: 'Narrow probe: single-layer single-module SVD transplant at layer
+      15 mlp.up_proj, k ∈ {128, 256} × mode ∈ {full, ortho-control}, eval only on
+      phase1d_v2 N=2 split (251 samples). Scope intentionally narrowed from original
+      per-layer×per-module plan due to 6h GPU budget and smoke-validated starting
+      point. Null result at this scope cannot generalize to "top-k subspace is not
+      a causal carrier" — requires cross-layer follow-up (deferred to exp_014b if
+      ARR rebuttal requires). Interpretation gates: em_partial ≥0.15 = suggestive
+      appendix evidence (scope-limited, not §2 Phase 1b→causal); 0.05-0.15 = inconclusive,
+      registry-only; <0.05 = null consistent with distributed-capability hypothesis,
+      does not falsify C3.'
+    parent: exp_003_phase1b_svd_analysis
+    notes: '[RUNNING 2026-04-14 03:55Z] tmux exp014_sweep PID 34328, Config 1/4 (k128_full)
+      eval 211/251, runtime 52min/360min, GPU 90%/15G, no OOM. workdir 29G (含 smoke_k128_mlp_only
+      15G vestigial). batch_em_full 前 211 个仅 4 个=1.0, 预计 <2% em_full. CHINESE_DRIFT
+      在 gate smoke idx=38 已检出 (pred="天堂; 罗伯特·普伦斯"). Cron interval=720s 监控 tmux. [Scope
+      narrowed 2026-04-14 after Reviewer warning] Original per-layer×per-module cross-layer
+      sweep deferred to exp_014b if ARR rebuttal requires. 当前 scope = layer=15 × mlp.up_proj
+      × k∈{128,256} × {full, ortho} = 4 configs, N=2 split only. 解读框架 pre-committed:
+      em_partial ≥0.15 = suggestive appendix evidence; 0.05-0.15 = inconclusive; <0.05
+      = null consistent with distributed-capability hypothesis. 论文不得以任何结果宣称"top-k
+      subspace is not a causal carrier". ARR rebuttal 优先级: exp_016 (C1 passage-redaction
+      blocking) > exp_014b (optional cross-layer follow-up). [TERMINATED 2026-04-14
+      05:02:40Z] Run terminated by autodl_release hook at 05:02:40Z after SSH liveness
+      check fail; partial smoke_k128_full checkpoint on data disk, pending verification
+      after instance reboot; scope-narrowed to layer=15 mlp.up_proj k={128,256}, optional
+      appendix evidence only, not a load-bearing claim.'
+    conclusion: failed
+    extra:
+      hook_events:
+      - event: on_failed
+        action: autodl_release
+        ts: '2026-04-14T05:02:40.285833+00:00'
+      - event: on_failed
+        action: agent
+        ts: '2026-04-14T05:02:41.435467+00:00'
+  exp_015_kang2025_protocol_validation:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-14T02:31:09.761Z'
+    updated_at: '2026-04-14T05:05:32.686Z'
+    hypothesis: 'C1 empirical differentiation + C10 protocol generality: 在 Kang 2025
+      (agent-distillation, NeurIPS 2025) 的公开 checkpoint 上跑 MemDistill 3-phase 诊断协议,
+      证明 silent failure mode 非 MEM1-only, 同时给 Kang 对照 empirical teeth. 方案 (b) 压缩 8
+      GPU-h: 1.5B+7B × {baseline, ftp} × {HotpotQA, GSM8K} = 16 run configs. Teacher
+      不 deploy (Kang 开源 trajectories). Phase A surface metric collapse curve + Phase
+      C oracle retrieval replay from teacher_trajectories_2k. Outcome: 成功复制 silent
+      failure → §3.8 独立第三方验证 + C1/C10 升 empirical; null (无 silent failure) → narrow
+      C10 claim + 新 finding "ftp partially rescues"; hard-fail → 降级 WebFetch-only
+      C1 差异化. Stop 条件: adapter >8h 无 sanity abort, Phase A 无 pattern 停 Phase C, GPU
+      >20h 强制停. Parent: paper:v3.3 C1 review response. 无训练, 纯 inference + schema adapter.'
+    parent: exp_013_w2_cross_backbone_llama1b
+    conclusion: failed
+    notes: '[FAILED_INFEASIBLE 2026-04-14] Kang 2025 smolagents CodeAct format 不兼容
+      MemDistill ReAct, fast-fail at phase0_dryrun. Original plan was 8 GPU-h 3-phase
+      diagnostic protocol replay on Kang 2025 public checkpoint for C1 empirical differentiation
+      + C10 protocol generality (1.5B+7B × {baseline, ftp} × {HotpotQA, GSM8K} = 16
+      run configs, teacher trajectories 2k). Dropped at phase0_dryrun: Kang''s smolagents
+      CodeAct action format (Python code blocks in assistant responses) is structurally
+      incompatible with MemDistill''s ReAct positional injection protocol (<think>/<search>/<information>/<answer>).
+      Adapting the eval harness would require >1 GPU-week engineering plus bespoke
+      trajectory parser — out of scope for ARR rebuttal. C1 differentiation falls
+      back to WebFetch-only narrative evidence; C10 protocol generality narrows to
+      MEM1-only claim with explicit scope note in §4 related work. Reviewer''s second-order
+      concern addressed by acknowledging the infeasibility in Limitations rather than
+      running the experiment. Logical status: FAILED_INFEASIBLE (registry enum does
+      not carry this label, stored as DONE+failed; see this notes field for semantic
+      disambiguation).'
+  exp_015:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-14T02:46:29.947Z'
+    updated_at: '2026-04-14T08:59:08.634Z'
+    notes: orphan PREPARING entry, superseded by exp_015_kang2025_protocol_validation
+      (DONE/failed). Cleaned 2026-04-14 by worker_exp_016_post_housekeeping (PREPARING→QUEUED→ALLOCATED→RUNNING→DONE
+      transitions, conclusion=failed). Original notes preserved in git history via
+      registry.yaml.
+    conclusion: failed
+  exp_016_passage_redaction:
+    status: DONE
+    retry_count: 0
+    created_at: '2026-04-14T06:33:28.370Z'
+    updated_at: '2026-04-14T08:54:41.186Z'
+    hypothesis: 'C1 blocking rebuttal: passage-redaction oracle replay to disentangle
+      retrieval quality from answer leakage. Reviewer C1 noted that oracle SFT gain
+      (+47.3pp em_partial on N=8) may be dominated by passage-level gold-answer leakage
+      (v3.4 leakage audit: 98% substring hit rate). exp_016 runs 4 conditions on Qwen-3B
+      SFT pooled (base + LoRA adapter checkpoints/exp_006_sft_shared) × 125-prompt
+      phase1d_v2 N=8 test split: (1) no_api baseline, (2) oracle_full (reproduce §3
+      table, ±0.02 hard-stop sanity gate), (3) oracle_redacted_full (100% gold substring
+      redaction in teacher info blocks), (4) oracle_redacted_half (50% deterministic
+      odd-index redaction, dose-response control). Interpretation gates (pre-committed,
+      Director APPROVED 2026-04-14): primary gate on Delta_full_redact = em_partial(oracle_redacted_full)
+      - em_partial(no_api). ≥+25pp → retrieval_quality_dominates (headline holds);
+      +5 to +25pp → partial_mechanism (scope-limit §3.5); <+5pp → leakage_dominated
+      (downgrade §1/§3/§5 causal claim). Dose-response half-redact as secondary monotonicity
+      witness. Director追加约束: Phase 1 ±0.02 hard stop blocker_report (no self-diagnose),
+      n_redacted_per_block in eval JSON, 3 before/after samples in redaction_samples.json.
+      Worker modified redaction spec to substring + word-boundary + quote-strip (vs
+      plan.md pure substring) to avoid catastrophic over-redaction from short yes/no
+      golds (e.g. "no" matching "November"); pending Director ACK. GPU budget 1.25h
+      cuda:0 on RTX PRO 6000 Blackwell.'
+    reproduce:
+      finished_at: '2026-04-14T08:32:58.857Z'
+    extra:
+      hook_events:
+      - event: on_complete
+        action: autodl_release
+        ts: '2026-04-14T08:32:59.032975+00:00'
+      - event: on_complete
+        action: agent
+        ts: '2026-04-14T08:33:00.151288+00:00'
+    metrics:
+      no_api_em_partial: 0.021
+      oracle_full_em_partial: 0.498
+      oracle_redacted_full_em_partial: 0.131
+      oracle_redacted_half_em_partial: 0.373
+      delta_full_redact_pp: 11
+      delta_oracle_full_pp: 47.7
+      delta_half_redact_pp: 35.2
+      delta_leakage_oracle_minus_redacted_pp: 36.7
+      bootstrap_ci95_redacted_full:
+      - 0.088
+      - 0.132
+      bootstrap_ci95_oracle_full:
+      - 0.446
+      - 0.509
+      bootstrap_ci95_half_redact:
+      - 0.322
+      - 0.382
+      bootstrap_ci95_delta_leakage:
+      - 0.335
+      - 0.4
+      bootstrap_seed: 42
+      bootstrap_resamples: 10000
+      n: 125
+      gate_oracle_full_reproduction: PASS (0.498 vs expected 0.498, tol=0.02)
+      half_condition_is_half_density_not_half_subset: true
+      half_density_mean_subs_per_passage: 2.6
+      full_density_mean_subs_per_passage: 13.3
+      no_api_latency_4_72x_not_from_longer_fallback: true
+      no_api_avg_word_tokens: 325.7
+      oracle_full_avg_word_tokens: 315.4
+    conclusion: negative

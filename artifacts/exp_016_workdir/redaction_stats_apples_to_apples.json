@@ -1,0 +1,29 @@
+{
+  "counting_method": "json.dumps(details[i]).count('[REDACTED]') — identical to D worker's postprocess.py",
+  "field_path_used": "json.dumps of entire details[i] dict (same as D)",
+  "full_eval_total_redacted": 753,
+  "full_eval_n_items_with_redacted": 125,
+  "full_eval_n_items_total": 125,
+  "half_eval_total_redacted": 325,
+  "half_eval_n_items_with_redacted": 125,
+  "half_eval_n_items_total": 125,
+  "half_eval_sanity_check_matches_D": true,
+  "D_baseline_for_half": 325,
+  "ratio_half_over_full": 0.4316,
+  "phase0_dry_run_full_count_for_reference": 1663,
+  "phase0_dry_run_half_not_available": true,
+  "interpretation": {
+    "ratio_0.5": "half is first-N subset (50% passages full-redact)",
+    "ratio_0.2": "half is density-half (~20% redaction density per passage)",
+    "observed_ratio": 0.4316,
+    "closest_to": "per-passage-density-~50% (all 125 passages redacted in both, half ~= full/2)",
+    "half_n_items_with_redacted": 125,
+    "full_n_items_with_redacted": 125,
+    "first_N_subset_ruled_out": true,
+    "narrative": "Both full and half conditions have [REDACTED] tokens on ALL 125/125 passages. Half is NOT a first-N subset (which would give half_n << full_n). Instead, half reduces redaction DENSITY per passage: full avg 6.02/passage, half avg 2.60/passage, ratio=0.4316. Discrepancy with Phase 0 dry-run 1663 (vs 753 here) means eval details dict captures ~45% of pre-processing substitutions (likely prompt truncation or partial-block serialization)."
+  },
+  "full_per_item_counts_first20": [7, 5, 19, 5, 5, 5, 3, 13, 10, 10, 9, 4, 7, 6, 2, 15, 7, 6, 5, 1],
+  "full_per_item_counts_last20": [4, 3, 8, 10, 1, 4, 2, 9, 8, 4, 8, 9, 5, 5, 2, 8, 11, 6, 4, 4],
+  "half_per_item_counts_first20": [2, 3, 6, 4, 1, 3, 2, 4, 2, 5, 4, 2, 3, 5, 1, 4, 2, 4, 3, 1],
+  "half_per_item_counts_last20": [1, 1, 4, 6, 1, 3, 1, 2, 1, 2, 3, 1, 2, 1, 1, 4, 4, 2, 2, 3]
+}

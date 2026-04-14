@@ -1,0 +1,19 @@
+{
+  "no_api_field": "generated_text",
+  "no_api_avg_word_tokens": 325.72,
+  "oracle_full_field": "generated_text",
+  "oracle_full_avg_word_tokens": 315.36,
+  "no_api_elapsed_per_item": 29.3336,
+  "oracle_full_elapsed_per_item": 6.2192,
+  "latency_ratio_no_api_over_oracle": 4.716,
+  "avg_searches_no_api": 1.0,
+  "truncated_rate_no_api": 0.0,
+  "hypothesis_tested": "reviewer conjecture: no_api latency 4.7x oracle because fallback generates ~2500 vs ~500 tokens",
+  "hypothesis_verdict": "FALSIFIED - avg generated-text length is nearly identical across conditions (325.7 vs 315.4 word-tokens). 4.7x latency gap cannot be explained by longer generations.",
+  "trustworthiness": "results remain trustworthy: avg_searches=1, truncated_rate=0, per-sample em_partial distribution is well-formed; no_api mean em_partial=0.021 (chance-level, as expected when context is empty).",
+  "no_api_samples_first3": [
+    "<think>Let me search for information about these questions.</think><search>What profession does John Lanchester</search>\n\n<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: John Lanchester) John Lanchester (born 1967) is an English journalist, novelist, and short story writer.  He is a former editor of \"The Economist\" magazine and a columnist for \"The G",
+    "<think>Let me search for information about these questions.</think><search>What was Richard Connell's best</search>\n\n<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: The Hounds of Zaroff) \"The Hounds of Zaroff\" is a short story by Richard Connell, first published in the October 1942 issue of \"The Saturday Evening Post\".  It was also published as \"The ",
+    "<think>Let me search for information about these questions.</think><search>Jamal Igle was known for</search>\n\n<information>\n[HINT]You have 1 turn left. You must answer the question now.[/HINT]\nDoc 1(Title: Jamal Igle) Jamal Igle (1922\u20131988) was an American illustrator and comic book artist.  He was best known for his work on \"Action Comics\" and \"Action Comics\" #100, \"Action Comics\" #101, \"Action Comics\" #101"
+  ]
+}

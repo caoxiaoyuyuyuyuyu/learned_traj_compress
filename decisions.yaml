@@ -1,0 +1,924 @@
+_next_id: 62
+decisions:
+- id: D001
+  date: 2026-04-09 12:52 UTC
+  summary: Phase 1d 改为 2×2 对照设计（size × method），MEM1 go/no-go deadline 04/11，时间线加 buffer
+    week
+  rationale: Reviewer 指出 Phase 1d 原设计（3B SFT vs 1.5B DPO）有混淆变量——模型大小和训练方法同时变化，无法分离
+    capacity 和 mode collapse 效应。改为 1.5B SFT / 1.5B DPO / 3B SFT / 3B DPO 的 2×2 设计。同时采纳
+    go/no-go deadline（避免 MEM1 权重不可用时无限等待）、GPU 预算基准测试、EM reward 鲁棒性 ablation、buffer
+    week 等建议。
+  related_experiments: []
+  depends_on: []
+- id: D002
+  date: 2026-04-09 12:54 UTC
+  summary: 'MEM1 go/no-go: GO — 权重公开可用，项目正式推进'
+  rationale: Agent 调研确认 MEM1 7B RL policy 权重在 HuggingFace 公开（Mem-Lab/Qwen2.5-7B-RL-RAG-Q2-EM-Release）。SVD
+    rotation 分析代码也公开。SFT baseline 未公开但可从 MEM1 训练代码复现。BOND 无官方代码但可用 TRL 等价实现。唯一待验证：HF
+    页标注 1.0B 参数，可能是 LoRA adapter 而非完整权重，已派 Agent 优先验证。
+  related_experiments: []
+  depends_on: []
+- id: D003
+  date: 2026-04-09 13:06 UTC
+  summary: 统一 EM 标准化用 normalize_answer()；Phase 2a 预留 reward normalization 两种方案
+  rationale: Reviewer 发现 MEM1 训练用 normalize_answer()（移除 articles）而评估用 preprocess_text()（不移除），不一致会导致所有
+    phase 的数据不可比。统一用 normalize_answer() 与训练一致。同时 reward scale 随 objective count 线性增长（N=4
+    只有 5 个离散 level），低 N 时 Best-of-N pair 质量下降，需 normalization。
+  related_experiments: []
+  depends_on: []
+- id: D004
+  date: 2026-04-09 14:14 UTC
+  summary: MEM1 权重确认为完整 7B 模型（非 LoRA adapter），取消 adapter 合并步骤
+  rationale: Agent 验证 Mem-Lab/Qwen2.5-7B-RL-RAG-Q2-EM-Release 的 model.safetensors.index.json
+    显示 total_size=30GB、7 个 shard，是完整模型权重。消除 D002 中 LoRA adapter 风险项，简化 Phase 0 pipeline。
+  related_experiments: []
+  depends_on:
+  - D002
+- id: D005
+  date: 2026-04-09 19:02 UTC
+  summary: exp_001 推理验证 GO — MEM1 RL 效果确认，进入 Phase 1
+  rationale: Go/no-go 三项全过：EM=1.0（3/3，样例偏简单需后续大规模验证）、RL 输出风格明显区别于 base（直接 answer tags
+    vs 冗长解释）、推理速度 35.7 tok/s 远超阈值。注意：EM=1.0 因测试用例过简单，真正差异需在多目标（N>6）场景验证。
+  related_experiments:
+  - exp_id: exp_001_inference_validation
+    role: primary
+    result: success
+  depends_on:
+  - D002
+  - D004
+- id: D006
+  date: 2026-04-09 19:04 UTC
+  summary: D005 修正：MEM1 可正常推理，RL 增量效果待 Phase 1a 验证
+  rationale: Reviewer 指出 exp_001 中 MEM1 EM=1.0 vs base EM=1.0，无法支撑"RL 效果确认"结论。实际验证的是：模型可正常加载/生成、输出风格有差异（answer
+    tags vs 冗长解释）、速度达标。RL 相对 base 的 EM 增量需在 Phase 1a 多目标梯度（N>6）中验证。GPU 时间预算应按 35 tok/s
+    估算。
+  related_experiments:
+  - exp_id: exp_001_inference_validation
+    role: primary
+    result: success
+  depends_on:
+  - D005
+- id: D007
+  date: 2026-04-09 20:50 UTC
+  summary: 'D007: exp_002 prompt 格式不匹配确认，方案 B 修正后重跑 collapse curve'
+  rationale: exp_002 原始结果 MEM1 N=1 EM=16%（不可信）。排查发现 5 个 prompt 维度与 MEM1 训练设置不匹配（最致命：单轮
+    reader vs 迭代搜索 agent）。方案 B（模拟最后一轮搜索完成）sanity check N=1 EM=80%，确认 prompt 是主因。exp_002v3
+    用修正 prompt 重跑全量 collapse curve。教训：使用 RL 微调模型时必须严格匹配训练 prompt 格式。
+  related_experiments:
+  - exp_id: exp_002_phase1a_collapse_curve
+    role: failed
+    result: prompt mismatch
+  - exp_id: exp_002v3_phase1a_collapse_curve
+    role: rerun
+    result: running
+  depends_on:
+  - D005
+- id: D008
+  date: 2026-04-09 21:57 UTC
+  summary: 'D008: Phase 1a collapse curve 2/3 GO — collapse 存在但为渐进衰减非相变，调整核心假设'
+  rationale: exp_002v3 结果：MEM1 EM 0.62→0.34（N=1→16），统计显著（p<0.05），collapse rate 38%→66%。RL-base
+    gap 全部≥0.1。但无非线性拐点——衰减近似线性（~0.018/N unit），不支持原假设的"N>6 phase transition"。调整假设为"gradual
+    capacity saturation"：随目标数增加，RL 模型能力线性退化而非突变。这仍是有意义的发现，但论文 story 需从"灾难性 collapse"调整为"渐进式能力饱和"。Phase
+    1b SVD 继续推进，目标变为理解线性衰减的机制。
+  related_experiments:
+  - exp_id: exp_002v3_phase1a_collapse_curve
+    role: primary
+    result: partial_go
+  depends_on:
+  - D007
+  - D006
+- id: D009
+  date: 2026-04-09 22:17 UTC
+  summary: 'D009: Phase 1b SVD 发现 RL 变化 97.6% 在正交子空间——论文核心机制确立'
+  rationale: exp_003 SVD 分析：RL 不扩展秩（Δ≈0）、不旋转方向（1.26°）、alignment≈1.0，但 97.6% 的 ΔW 能量在
+    base top-256 子空间之外。层间分布均匀（非局部 mode collapse）。MLP 比 attention 更极端（99.7% vs 96.1%）。核心假设从"mode
+    collapse"修正为"RL 知识存在于正交子空间，SFT/LoRA 等 low-rank 方法无法捕获"。这对 Phase 2 有直接影响：需要 orthogonal-preserving
+    distillation 而非 mode-covering（DPO）。
+  related_experiments:
+  - exp_id: exp_003_phase1b_svd_analysis
+    role: primary
+    result: partial_go
+  depends_on:
+  - D008
+- id: D010
+  date: 2026-04-09 22:24 UTC
+  summary: 'D010: D009 "正交子空间"结论暂停——缺少随机基线，97.6% 是高维几何必然'
+  rationale: Reviewer 指出：双侧投影 top-256 在高维矩阵中，随机 ΔW 的期望 in-subspace ratio 仅 0.1-0.5%。exp_003
+    观测的 in-ratio（attention 3.9%, MLP ~0.3%）实际是随机的 3-7.6 倍，说明 RL 变化与 base 子空间有超随机对齐——与"正交添加信息"结论完全相反。必须补充：(a)
+    随机基线 (b) k 灵敏度分析 (c) 单侧投影 (d) 维度归一化对比，才能下结论。
+  related_experiments:
+  - exp_id: exp_003_phase1b_svd_analysis
+    role: primary
+    result: inconclusive
+  depends_on:
+  - D009
+- id: D011
+  date: 2026-04-09 22:40 UTC
+  summary: 'D011: 随机基线彻底推翻"正交子空间机制"——RL 变化实为 base 主方向的超随机对齐'
+  rationale: exp_003b 随机基线校准：obs/random 比值在 k=64 时高达 6.49x，k 越小对齐越强，说明 RL 优先修改 base
+    最重要的主方向。MLP 对齐度（3.49x）高于 attention（2.25x），反转原始结论。单侧投影揭示不对称：attention 沿输出空间，MLP
+    沿输入空间。论文 story 从"正交添加新信息"修正为"在已有子空间方向上的精细调整"。exp_004 probing 假设需调整。
+  related_experiments:
+  - exp_id: exp_003_phase1b_svd_analysis
+    role: primary
+    result: revised
+  - exp_id: exp_003b_random_baseline
+    role: calibration
+    result: success
+  depends_on:
+  - D010
+- id: D012
+  date: 2026-04-09 23:58 UTC
+  summary: 'D012: Phase 1c probing 阴性——主方向 Δh 无法线性预测 per-objective EM；但三方 SVD 发现 RL
+    对齐度是 SFT 的 1.89 倍'
+  rationale: exp_004 probing 全面失败：binary AUC 最高 0.634（接近随机），主方向 probe 未优于随机方向，regression
+    R²<0。"主方向精细调整编码多目标能力"假设不成立。但三方 SVD 对比发现：RL obs/random 2.78x vs SFT 1.47x（k=256），RL
+    比 SFT 更精确沿 base 主方向调整，所有 k 值一致。单侧不对称性三个对比中一致。这是观察性发现，需 Phase 1d 蒸馏实验闭合因果链。
+  related_experiments:
+  - exp_id: exp_004_phase1c_probing
+    role: primary
+    result: negative
+  depends_on:
+  - D011
+- id: D013
+  date: 2026-04-10 06:04 UTC
+  summary: 'D013: Phase 1d exp_005 失败——DPO 训练无信号（loss=log2），数据量严重不足，需重新设计'
+  rationale: Reviewer critical 审查发现三个致命问题：(1) DPO loss=0.693=log(2)，chosen/rejected
+    rewards完全相同，训练无信号；(2) 数据量严重不足（SFT 116样本，N=8仅1个perfect sample）；(3) 1.5B所有N值EM=0.000。根因：DPO从base直接训练缺SFT预热，200
+    prompts/N数据量太少，1.5B+rank16+少样本三重不足。需要重新设计：增加数据量至1000+、SFT→DPO两阶段pipeline、提高LoRA
+    rank、先验证1.5B基本能力。
+  related_experiments:
+  - exp_id: exp_005_phase1d_2x2_contrast
+    role: primary
+    result: failed
+  depends_on:
+  - D012
+- id: D014
+  date: 2026-04-10 09:44 UTC
+  summary: exp_006 资源超限放行：保留全 N（2/4/8）+ 全 prompts（1000）继续运行，单实验 GPU 上限放宽到 ~32h
+  rationale: Worker 实测 16s/it 比预期 10s/it 慢 60%，Stage 0 总剩余 17-26h，整体 22-31h 远超 Auto
+    Research 单实验 8h 上限。三个备选方案均不可接受：(B) 丢 N=8 等于丢主因果验证点，整个 Phase 1d v2 失去 claim；(C)
+    缩 prompts 到 500 是 Reviewer 已质疑过的灰色区，且重启丢 3h 沉没成本；只有 (A) 继续跑能保住科学严谨性。每日 48h 总量内可承受，无并发实验。用户明确授权"你自己定，只要能发顶会就行"，故
+    Director 自决放宽 8h 软约束一次。后续 Phase 1e 决策（视 1d v2 结果）在 exp_006 完成后再定。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: subject
+    result: running
+  - exp_id: exp_005_phase1d_2x2_contrast
+    role: predecessor
+    result: failed
+  - exp_id: exp_004_phase1c_probing
+    role: motivation
+    result: negative
+  depends_on: []
+- id: D015
+  date: 2026-04-10 10:10 UTC
+  summary: Kill exp_006 当前运行，用修正版（双sampling+动态max_new_tokens+中间保存）立即重跑，节省5h GPU
+  rationale: Reviewer 发现 greedy/sampled 不对称：Response A 固定 greedy，Response B sampling(T=0.7)，导致
+    DPO chosen 系统性偏向 greedy response，学的是解码策略差异而非 RL 偏好结构。代码分析已确认偏差存在，等当前运行完成（~5h）仅能量化偏差程度，数据不可用于训练。Kill
+    重跑节省 5h。修正版已 commit (ca021a6)：双 sampling 不同 seed + 动态 max_new_tokens (N≤2→512,
+    N≤4→1024, N≥5→2048) + per-N 中间保存。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: target
+    result: restarting with fixes
+  depends_on:
+  - D014
+  - D013
+- id: D016
+  date: 2026-04-10 12:08 UTC
+  summary: 'D016: exp_006 N=4/N=8 优化+并行方案：batch generation + 双卡并行，N=8 裁剪阈值 30% DPO
+    yield'
+  rationale: exp_006 实际速度 20s/it（计划 8s/it），原因是 D015 双 sampling 串行 generate。N=2 不中断（已过半）；N=2
+    完成后改 num_return_sequences=2 batch 模式（~1.5x）；用户同意加卡，N=4 和 N=8 分两张卡并行（~2x）。N=8 硬阈值：N=4
+    DPO pair yield ≥ 30% → N=8 1000 prompts，否则 500。注意：batch 模式丢失独立 seed 复现性，需在论文 method
+    中记录 sampling 协议差异。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: target
+    result: running
+  depends_on:
+  - D015
+  - D014
+- id: D017
+  date: 2026-04-10 15:10 UTC
+  summary: 'D017: D016 阈值提前触发（N=2 yield 24.2% < 30%），N=4/N=8 起步即裁到 500 prompts'
+  rationale: 'N=2 DPO yield = 242/1000 = 24.2%，已低于 D016 设定的 30% 阈值——不等 N=4 结果，直接对
+    N=4/N=8 启动裁剪。ETA 推算基于 PID 222408 kill 时 N=4 前 20 样本实测稳态 25–28 s/it（保守取 27 s/it）：N=4@1000
+    = 500×27/3600×2 = 7.5h → N=4@500 = 500×27/3600 ≈ 3.75h；N=8 外推按 max_new_tokens
+    不变但 trajectory 步数随 N 上升，保守取 N=4 的 1.6× → N=8@500 ≈ 6.0h（上界 1.8× ≈ 6.75h）。N=4+N=8@500
+    总计 9.75–10.5h，汇报值 ~10h。节省约 9.75h GPU（vs N=4@1000+N=8@1000 ≈ 19.5h）。已 kill 旧 PID
+    222408，按 --prompts_per_n 500 --resume 重启：scripts/phase1d_generate_data.py L349-357
+    只检查 len(saved)>=prompts_per_n → skip，不会截断已有 N=2 1000 prompts 数据；新进程启动日志确认 ''N=2:
+    already complete (1000 prompts), skipping''。新 PID 84903，log: logs/exp_006_stage0_datagen_v2_n4n8_500.log。'
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: target
+    result: running
+  depends_on:
+  - D016
+- id: D018
+  date: 2026-04-10 16:00 UTC
+  summary: 'D018: exp_007 Phase 1c 非线性 probe 证否，结案 NO-GO — Story 稳固性 黄→红'
+  rationale: Reviewer 基于 L0–L19 原始日志判定数据方向与假说相反，不需要等 L23/L27。关键证据：(1) MLP ρ 几乎全面输给
+    Linear ρ（47/55 pairs, 85.5%, paired t=-8.192, p=4.83e-11, Cohen's d=-1.105），与'非线性流形'假说方向性直接冲突；(2)
+    random feature 噪声带 |ρ|≤0.224（n=300），真实 feature 中仅 3/55 (5.45%) 的 Linear |ρ| 超过噪声带上限。MLP+Linear
+    双阴性 → Phase 1c 非线性假说被证否。影响：Story 稳固性 黄→红；非线性流形 claim 被自家实验证否；SVD 对齐解释需降级（仅 claim
+    线性子空间层面）。Phase 1 命运现在单线依赖 exp_006 (DPO vs SFT)。
+  related_experiments:
+  - exp_id: exp_007_phase1c_mlp_probe
+    role: primary
+    result: negative
+  depends_on:
+  - D012
+- id: D019
+  date: 2026-04-10 16:37 UTC
+  summary: 'D019: Stage 1 训练方案重设计——pooled SFT + per-N DPO，解决高 N SFT 数据稀缺问题'
+  rationale: N=4 SFT 仅 76 条（perfect rate 15.2%），N=8 预计 <25 条。per-N 独立 SFT 训练不可行。改为：(1)
+    pooled SFT：合并全部 N 的 perfect trajectories (~580+ 条) 训练 shared SFT base；(2) per-N
+    DPO：在 shared SFT 上分别用 N=2/4/8 preference pairs 微调。优势：SFT baseline 统一充足，DPO 贡献被干净隔离，可直接验证"DPO
+    在高 N 下贡献更大"的核心 claim。不重跑数据生成，N=8 继续。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: target
+    result: ongoing
+  depends_on:
+  - D017
+  - D015
+- id: D020
+  date: 2026-04-10 17:51 UTC
+  summary: Stage 1 主 claim 基于 matched-sample（subsample 到 min pair count = N=8），full-data
+    仅作 upper-bound；shared SFT 报告 per-N train loss + 加 balanced-pooled ablation（N=2
+    下采样到 50）；更新 hypothesis 文本将"充足数据≥1000 prompts/N"范围限定为仅 N=2 成立。
+  rationale: Reviewer 对 D019 提 3 warning：(1) per-N DPO 样本单调递减（N=2=489 → N=8 预计<100），不
+    matched-sample 无法区分"DPO 对高 N 无效" vs "N=8 数据不足"（退化到 exp_005 D013 失败模式）；(2) pooled
+    SFT ~80% 由 N=2 主导，"DPO 对高 N 更有效" 可能是 baseline 欠训练假象；(3) hypothesis 与执行偏差——exp_006
+    声明"≥1000 prompts/N"但 D017 裁到 500，N=4 pair 数（176）比 exp_005（116）仅略多，N=8 预计更少。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+  - exp_id: exp_005_phase1d_2x2_contrast
+  depends_on: []
+- id: D021
+  date: 2026-04-10 18:24 UTC
+  summary: (1) Go/Stop 矩阵从 2 行扩为 5 行，为 matched-sample 下增补 matched≈SFT/full>SFT、matched
+    差距<1pp、不同 N 结果矛盾三种真实情形，并定义可投阈值 = matched N=8 DPO - SFT ≥ 3pp 且 paired bootstrap
+    p<0.05。(2) 单 student size + 单 dataset 风险升级为 critical，Phase 2 budget 30h→20h 挪
+    10h 到新增 Phase 1.5 (15h GPU，Phase 3 再挪 5h)，用于 {另一 student size 1.5B 或 7B, 另一 dataset
+    HotpotQA/MuSiQue} 快速验证。(3) Stop fallback 预案 3 条：workshop negative result、SFT-RL
+    gap 诊断框架 methods paper、pivot。(4) W1 时间线拆为 04/11 bugfix+smoke / 04/12 review+训练启动
+    / 04/13 训练完成+初步分析。
+  rationale: Reviewer 对 ROADMAP 4 warning：Go/Stop 二元化（缺 matched≈SFT/full>SFT、<1pp、N
+    矛盾分支）；AAAI viability 不足（3 obs 阴性/中性 + 1 弱阳性 method claim，单 student size + 单 dataset
+    + single teacher + 小 sample size → desk reject 级攻击面）；Stop 后无 fallback 导致 AI 过度乐观拖延陷阱；W1
+    3 天时间线不现实（bugfix ≤3 轮 + review 循环墙钟 + 训练 + 分析）。这些战略空白不在 Stage 1 启动前定清，会在"是否进 Phase
+    2"节点浪费一个决策周期。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+  depends_on: []
+- id: D022
+  date: 2026-04-10 18:35 UTC
+  summary: exp_006 Stage 1 所有主张指标（D021 Go/Stop 矩阵阈值、可投阈值 3pp、paired bootstrap p<0.05、N
+    趋势判定）一律以 **em_partial**（per-objective EM 均值）为准。em_full（每条 prompt 全对的严格 metric）仅作
+    strict secondary 上报，不参与 Go/Stop 决策。truncated_rate 作为附加诊断字段。
+  rationale: Reviewer 第三次提示 critical：D019/D020/D021 都未钉死主张指标，em_full 与 em_partial
+    在 N=8 上可能给出相反结论。em_partial 与 phase 1a baseline mem1_n8_em=0.455 的 mean_em 同语义（"per-objective
+    均值 over samples"），保证 Stage 0 (analyze_phase1d_v2_raw.py mean_em) → phase 1a baseline
+    → Stage 1 三处指标可比。em_full 在 N=8 上分母小（~75 prompts × 8 子目标全对）方差大绝对值低，作主指标会被审稿人质疑统计
+    power；用 em_full 对比 phase 1a 0.455 是单位错配，会把 N=8 baseline 凭空抬到不可比位置。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+  depends_on: []
+- id: D023
+  date: 2026-04-10 18:43 UTC
+  summary: 'SFT 入选准则从 `is_perfect (total_em == n_objectives, em_full=1)` 改为 `partial-credit:
+    total_em ≥ 1`（即 chosen response 至少答对 1 个 objective），与 DPO chosen 同口径。从已有 raw_trajectories_N{2,4,8}.json
+    重新提取 sft_data，不重跑 RL teacher。预计 SFT N=8 从 2 样本 → ~270-300 样本（与 DPO_N8=277 同量级）。--balanced_sft
+    重定义为 subsample 到新 min(SFT_per_N)。paper limitations 必须明确写明"SFT 入选 = partial-credit,
+    与传统 learn-from-perfect-demos 不同; 选择源于 D022 主张指标 em_partial 的语义闭环"。Stage 1 启动前必须完成数据重提取
+    + 新 stats.json + 新 matched_size 计算。'
+  rationale: Reviewer 用 stats.json 直接证据揭示 critical：N=2/4/8 perfect rate = 49.0%/15.2%/0.4%，SFT
+    N=8 仅 2 样本（0.35% of pooled SFT），shared pooled SFT 5 epochs 在 N=8 上的总梯度信号 = 2×5=10
+    次反向，等于"根本没在 N=8 上训练过"。D021 Go/Stop 核心判读"matched N=8 DPO−SFT ≥ 3pp"在结构上无法成立——任何审稿人
+    2 行可拆："Your N=8 SFT baseline saw 2 training examples; the gap is starvation, not
+    method." 同时 SFT (em_full=1) vs DPO (em_gap≥0.1, partial OK) 入选准则不可比，"matched-sample"
+    也无法救——matched-sample 只对齐 prompts 数量，对齐不了过滤准则差异。三选一中 (A) 是唯一同时满足 (i) 与 D022 闭环
+    (ii) 不需要额外 GPU (iii) 不弱化 story 的方案。(B) 砍 N=8 退化到 D013 失败模式附近；(C) 0.4% perfect
+    rate 加 prompts 救不了根本的 collapse。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+  depends_on: []
+- id: D024
+  date: 2026-04-10 18:51 UTC
+  summary: D021 Go/Stop 矩阵阈值 matched N=8 DPO−SFT 从 3pp 上调到 **5pp**；hash split 的 test_frac
+    从 0.15 上调到 0.25（N=8 test prompts 75 → ~125）。power 从 0.45 → 0.71（接受 <0.80 的妥协，避免重跑
+    N=8 raw_trajectories 的 3h GPU 浪费）。同步把 D021 矩阵的"<1pp 噪声阈值"放宽为"<2pp 噪声"，保持矩阵内部连贯。test_frac
+    调整影响所有 N 的 train/test split，需要 Agent 在重提取 sft_data 和重新 hash split 时统一应用，但不需要重跑
+    RL teacher。matched_sft 471→~353, matched_dpo 176→~132，training data 损失约 12% 可接受。
+  rationale: Reviewer 第 4 次提示真 critical：测试集 N=8 ≈ 500×15%≈75 prompts，em_partial 经验
+    σ≈0.20，95% CI half-width ≈1.96×0.20/√75≈4.5pp。3pp 阈值结构性低于噪声下限——DPO 真有 5pp 仍可能
+    false negative (power 0.45)，DPO 0pp 也能因抽样波动逼近 3pp。三选一中：(A) 仅上调阈值不扩 split → 75×5pp
+    power 仍 0.45 不合格；(B) 仅扩 split 不上调 → 150×3pp power 0.40 更差；(C) 同时上调 + 扩 split →
+    125×5pp power 0.71，妥协可接受；(D) 加跑 N=8 raw 到 1000 → 3h GPU 边际改进不值。选 C。5pp 也比 3pp
+    更易在论文 defense："3pp 是不是噪声" 变成 "为什么选 5pp"，effect size 解释更稳。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+  depends_on: []
+- id: D025
+  date: 2026-04-10 19:08 UTC
+  summary: 紧急修复 assign_split 数据泄漏：统一 hash 函数和 test_frac，抽共享模块
+  rationale: 'Reviewer critical: exp_006 SFT/DPO 训练脚本的 assign_split 仍用 prompt_text[:500]
+    截断 hash + test_frac=0.15，与 D024 re-extract（完整文本 hash + 0.25）不一致。MEM1 template
+    >500 chars 导致所有 prompt hash 相同，split 退化，test set 可能全部泄漏进训练集。要求抽共享模块消除拷贝不一致，加 assertion
+    防护。'
+  related_experiments:
+  - exp_id: exp_006
+    role: affected
+    result: data_leak_risk
+  depends_on: []
+- id: D026
+  date: 2026-04-10 22:54 UTC
+  summary: 'D026: Stage 1 训练-评估并发污染，kill 旧 eval + 重训 dpo_N4/N8（旧 ckpt 不可复用）'
+  rationale: 2026-04-10 22:47 UTC 发现旧 eval orchestrator (PID 104629, 启动于 20:08:40
+    UTC) 与新 train worker (21:44 UTC 启动) 在同一 ckpt 目录上 race：sft_shared 与 dpo_N2 在 22:22/22:31
+    UTC 被新版本覆盖，但旧 eval 仍 in-memory 抱着 20:08 时的 sft_shared 权重；同时 dpo_N4/N8 ckpt 仍是
+    20:00/20:07 UTC 的旧产物。Reviewer 独立核实属实并指出关键约束：sft_shared 已被新版本覆盖→base+adapter 时空错位→旧
+    dpo_N4/N8 adapter 在新 base 上完全失效，**不可复用**。决策：(1) kill PID 104629 接受 ~2.5h GPU sunk
+    cost；(2) 重训 dpo_N4/N8 from scratch on new sft_shared；(3) registry P0 补 exp_006_phase1d_v2_stage1
+    元数据条目；(4) fresh eval 强制 PYTHONUNBUFFERED + 专用 log path，启动前 nvidia-smi/check_job_status
+    双重确认；(5) 同步排查 DPO_N2 matched-sample 是否生效（疑似 N=2 用 133 而非 matched 109）+ 过拟合疑点（rewards/acc=1.0,
+    eval set 仅 19 条）。规则更新：worker 启动前 mandatory pre-flight 残留进程扫描，ckpt 路径建议带 wandb
+    run_id/timestamp 后缀避免 in-place 覆盖。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2_stage1
+    role: primary
+    result: blocked_race_condition
+  depends_on: []
+- id: D027
+  date: 2026-04-10 23:09 UTC
+  summary: 'D027: Stage 1 race condition 真因纠正 — 三因叠加（harness rate-limit 杀 worker +
+    framework retry 用 stale ckpt + worker 绕过 run.sh 手写 nohup），supersedes D026 根因描述'
+  rationale: audit worker 完整诊断锁定真因，D026 之前的"未清理残留 eval orchestrator"是表象。真实时间线：(1)
+    21:41 UTC 新 train worker 启动 → SFT 在 22:22 UTC 落盘 → 22:27 起 DPO_N2 nohup → 22:30:43
+    worker 被 harness 5h rate-limit 硬杀（result.json 含 'You hit your limit · resets 4pm
+    PT' + stop_reason=stop_sequence + error=rate_limit + is_error=true），但 framework
+    误标 status=done；(2) 22:31:17 DPO_N2 nohup 因独立于 LLM session 跑完落盘；(3) 22:34 framework
+    auto-spawn retry1 worker，retry 看到 on-disk sft_shared(22:22)+dpo_N2(22:31) 已有就直接
+    nohup 起 4 阶段 eval orchestrator，**没核查 dpo_N4(20:00)/dpo_N8(20:07) ckpt mtime <
+    SFT(22:22)**——用 stale N4/N8 adapter 配新 SFT base。这就是我先前看到的"旧 eval orchestrator
+    PID 104623"——不是失控遗留脚本，而是 retry 工作逻辑 bug。(4) 方法论 miss：项目本来有 scripts/exp_006_stage1_run.sh（含
+    for N in 2 4 8 + set -euo pipefail），原 worker 和 retry worker 都绕过它手写 per-stage nohup，否则
+    bash loop 会独立于 LLM session 跑完。三个 framework/worker bug 必须都治：(a) harness 把 rate_limit_killed
+    当 done，应标 status=rate_limited 并 gate retry 到 wall-clock reset 时间；(b) framework
+    retry worker 无 resume 协议，应强制 upstream ckpt mtime ≤ downstream ckpt mtime 一致性检查（mtime
+    链 invalidate）；(c) worker 标准规则：项目存在 orchestrator 脚本时必须优先调用，禁止手写 per-stage nohup。已采取的纠正动作：D026
+    已记录的 kill 旧 eval、rm stale dpo_N4/N8 仍有效；新增动作 wandb sync sft_shared+dpo_N2 offline
+    runs、修 dpo.py 落盘 trainer.state.log_history、改 run.sh 加 SKIP_N2 env 走 orchestrator、N4/N8
+    重训采纳 epochs=1+beta=0.05+lr=2e-5+max_grad_norm=1.0（针对 chosen-suppression 病态：rewards/chosen
+    从 +0.0415 单调跌到 -1.908）、hypothesis 文本改为"matched at raw-pair level"显式声明（论文 Methods
+    同步），sub_models provenance 已写入 registry。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2_stage1
+    role: primary
+    result: blocked_root_cause_identified
+  depends_on:
+  - D026
+- id: D028
+  date: 2026-04-11 00:00 UTC
+  summary: 'D029: Retrain DPO N2 with unified hyperparams (epochs=1, lr=2e-5, beta=0.05,
+    max_grad_norm=1.0) to eliminate cross-N confound'
+  rationale: N2 was trained with epochs=2/lr=5e-5/beta=0.1 causing overfitting (acc=1.0,
+    loss=0.129), while N4/N8 used epochs=1/lr=2e-5/beta=0.05 and are healthy. Reviewer
+    flagged this as confound variable for cross-N trend claims. Retraining N2 costs
+    ~1min GPU, enables clean "DPO benefit increases with N" claim in paper.
+  related_experiments:
+  - exp_id: exp_006_dpo_N2
+    role: subject
+    result: overfitted with old hyperparams
+  - exp_id: exp_006_dpo_N4
+    role: reference
+    result: healthy with new hyperparams
+  - exp_id: exp_006_dpo_N8
+    role: reference
+    result: healthy with new hyperparams
+  depends_on:
+  - D028
+- id: D029
+  date: 2026-04-11 11:48 UTC
+  summary: kill D031 全部 eval 进程并重跑：commit 7516b7c 静默 regression 移除 stop_strings 污染
+    em_*
+  rationale: Reviewer 对比 /tmp/exp_006_stage1_eval.py.bak 与当前脚本发现，commit 7516b7c 在
+    bump max_new_tokens 2048→4096 的同时未声明地删除 model.generate 的 stop_strings=["</answer>"]
+    + tokenizer=tokenizer 参数。后果：(1) 每条 prompt 生成满 4096 token，sft_shared 4h 未完；(2)
+    extract_answer 取最后一个 <answer> 匹配，没有停止符时模型首次 </answer> 后继续生成幻觉答案，em_full/em_partial
+    被系统性污染，DPO 可能受污染强于 SFT，直接破坏 D021 Go/Stop 判定基础；(3) truncated_rate 失去诊断语义。决策：立即
+    kill PID 141620/148896/149188/149485，revert stop_strings 部分（保留 max_new_tokens=4096
+    bump），4 模型 × 3 档全量重跑；D030 旧 sft_shared JSON 因 max_new_tokens=2048 导致 N=8 trunc=93.6%
+    cross-N 不公，一并作废重评。
+  related_experiments:
+  - exp_id: exp_006_eval_d030_dpo
+    role: invalidated_prior
+    result: killed
+  - exp_id: exp_006_eval_d031
+    role: aborted
+    result: killed_regression
+  - exp_id: exp_006_eval_d031_rerun
+    role: replacement
+    result: pending
+  depends_on: []
+- id: D030
+  date: 2026-04-11 14:27 UTC
+  summary: 'D032: DPO eval OOM 修复——merge adapter 消除三层叠加，重跑全部 DPO eval'
+  rationale: 8/8 DPO eval 均因 base+SFT adapter+DPO adapter 三层叠加 OOM 失败（在 N=2 前 10-20
+    prompt 内被 OOM killer 终止）。修复方案：先 merge_and_unload 合并 adapter 到 base，保存 merged checkpoint，eval
+    时直接加载 merged model 避免多层 adapter 显存开销。
+  related_experiments:
+  - exp_id: exp_006_eval_d030_dpo
+    role: evidence
+    result: failed_oom
+  - exp_id: exp_006_eval_d031
+    role: evidence
+    result: failed_oom
+  - exp_id: exp_006_eval_d031_fix_dpo_N2
+    role: evidence
+    result: failed_oom
+  - exp_id: exp_006_eval_d031_fix_dpo_N4
+    role: evidence
+    result: failed_oom
+  - exp_id: exp_006_eval_d031_fix_dpo_N8
+    role: evidence
+    result: failed_oom
+  depends_on:
+  - D031
+- id: D031
+  date: 2026-04-12 04:31 UTC
+  summary: D032 merged eval 全部完成：DPO 提升微弱(+1~2.4pp)，无 N-matching 效应，matched N=8 Δ=+2.4pp
+    < 5pp 阈值，方向指向 Stop。待 paired bootstrap 确认后正式判定。
+  rationale: 全量交叉对比：merged_N2/N4/N8 在所有 eval-N 上仅比 sft_shared 高 1-2pp（em_partial），em_full≈0。DPO-N=k
+    在 eval-N=k 上不优于其他 DPO 变体（无 N-matching）。截断率从 93.6% 降至 80-84%（N8）是唯一有意义的改善，但根因是模型继承了
+    RL agent 的 search 行为却无法执行。按 D021 矩阵，matched N=8 DPO-SFT=+2.4pp < 5pp，不满足 Go 条件。
+  related_experiments:
+  - exp_id: exp_006_eval_merged_N2
+    role: eval
+    result: done
+  - exp_id: exp_006_eval_merged_N4
+    role: eval
+    result: done
+  - exp_id: exp_006_eval_merged_N8
+    role: eval
+    result: done
+  depends_on:
+  - D021
+  - D024
+  - D030
+- id: D032
+  date: 2026-04-12 06:10 UTC
+  summary: Go/Stop 正式判定：STOP。D032 全量 eval 确认 DPO 蒸馏未能显著超越 SFT baseline，触发 Stop fallback。
+  rationale: 1) 全量 3×3 bootstrap（3 DPO × 3 eval-N）：N=2/N=4 全部不显著（p>0.05），N=8 最大 delta
+    +2.4pp 远低于 5pp Go 阈值。2) 即便用旧 SFT（truncation 93.6% 严重低估 SFT），DPO 仍未达标——公平 baseline
+    下 delta 只会更小。3) 无 N-matching 效应：DPO-N=k 在 eval-N=k 上不优于其他 DPO 变体。4) em_full≈0：蒸馏模型无法完整回答任何多目标查询。5)
+    截断率 80-84%@N=8：模型继承 RL search 行为但无法执行，根本性行为失配。按 D021 矩阵属"❌ matched 差距 <5pp"，判定
+    STOP。
+  related_experiments:
+  - exp_id: exp_006_eval_merged_N2
+    role: eval
+    result: success
+  - exp_id: exp_006_eval_merged_N4
+    role: eval
+    result: success
+  - exp_id: exp_006_eval_merged_N8
+    role: eval
+    result: success
+  - exp_id: exp_006_phase1d_v2_stage1
+    role: training
+    result: success
+  depends_on:
+  - D021
+  - D024
+  - D031
+- id: D033
+  date: 2026-04-12 06:11 UTC
+  summary: Stop fallback 选择：选项 A — Workshop negative result paper。包装 Phase 1a-1c 诊断
+    + DPO 失败分析，目标 EMNLP 2026 Findings/Workshop。
+  rationale: 三选项评估：(A) 数据完整可直接写作，~1 周工作量，负结果对社区有价值；(B) Methods pivot 需额外实验验证通用性，风险大周期长；(C)
+    Project pivot 80h GPU 沉没。选 A 最优：快速收尾产出论文，同时释放精力评估新方向。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: main
+    result: stop
+  depends_on:
+  - D032
+- id: D034
+  date: 2026-04-12 06:13 UTC
+  summary: D033 升级为 A+：在 Option A 基础上追加低成本验证实验——eval 时抑制 <search> token 生成，测试 behavioral
+    mismatch 假说。
+  rationale: Reviewer 建议：search 行为泄漏是独立的机制发现。如果在 eval 时禁止 search token（logit suppression）后
+    EM 恢复，claim 从"DPO 失败"升级为"behavioral mismatch 是蒸馏失败的可诊断根因"。GPU 成本极低（~2h eval），投稿竞争力显著提升。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: context
+    result: stop
+  depends_on:
+  - D033
+- id: D035
+  date: 2026-04-12 06:31 UTC
+  summary: d031fix 确认 truncation confound：修复 SFT 截断后 DPO_N8 优势从 +2.4pp(p=0.0003) 缩小到
+    +1.0pp(p=0.163, 不显著)。论文主表改用 d031fix 基线。
+  rationale: SFT 旧 eval 用 max_new_tokens=2048 导致截断率 93.6%@N=8，人为压低基线。d031fix 用 4096
+    后截断率降至 83.2%，SFT em_partial 0.011→0.025。DPO 优势几乎消失，证实 Reviewer 预警的 truncation
+    confound。论文必须用公平基线报告。
+  related_experiments:
+  - exp_id: exp_006_eval_d031_fix_sft_shared
+    role: primary
+    result: SFT N=8 em_partial=0.025, truncated_rate=83.2%
+  - exp_id: exp_006_eval_merged_N8
+    role: comparison
+    result: DPO_N8 vs old SFT +2.4pp p=0.0003
+  - exp_id: bootstrap_N8_d031fix
+    role: primary
+    result: DPO_N8 vs new SFT +1.0pp p=0.163 不显著
+  depends_on:
+  - D032
+- id: D036
+  date: 2026-04-12 09:32 UTC
+  summary: Plan A 降级：exp_008 v4 失败 + suppression 未生效，终止 A+ 路线，§3 使用 Plan A 版本
+  rationale: exp_008 v4 进程在 10 prompts 后被 kill，且部分结果显示 bigram bad_words_ids 未能有效抑制搜索行为——模型通过
+    tag 变体（错误闭合标签、插入空格、缩写闭合标签）绕过 token 级阻断。ROADMAP 明确"v4 为最后一次尝试"，截止条件已触发。§3 Plan
+    A 版本已就绪（轮次 2 审查已预处理），不含 suppression 实验。suppression 绕过发现有科学价值但样本太少（10条）不可用于论文主张。
+  related_experiments:
+  - exp_id: exp_008_search_suppression_v4
+    role: primary
+    result: failed
+  - exp_id: exp_006_phase1d_v2
+    role: parent
+    result: negative
+  depends_on:
+  - D034
+  - D033
+- id: D037
+  date: 2026-04-12 09:35 UTC
+  summary: D036 部分撤回：exp_008 v4 仍在运行，cron 误报 v3 死亡为 v4 失败。保持 Plan A 默认但等 v4 结果
+  rationale: Agent 诊断发现 cron 误触发——报告的是 v3 进程死亡（AutoDL 重启），v4 实际 PID 1774 正在运行（10/251
+    N=2 完成）。Reviewer 分析的 partial results 可能来自 v3（无 bigram blocking），v4 使用 bigram bad_words_ids
+    效果待验证。Plan A 版本保留为默认（已通过审查），v4 结果到位后若 suppression 有效则切 A+。
+  related_experiments:
+  - exp_id: exp_008_search_suppression_v4
+    role: primary
+    result: running
+  depends_on:
+  - D036
+- id: D038
+  date: 2026-04-12 10:13 UTC
+  summary: 投稿目标确定：EMNLP 2026 Findings，ARR 2026-05-25 截止
+  rationale: 用户指示"投EMNLP2026，尽快做，最低要求是findings"。从 workshop negative result 升级为 Findings
+    投稿。需要：模板切换、8页压缩、实验图、附录、匿名化。6 周时间充足。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: primary
+    result: negative
+  depends_on:
+  - D036
+- id: D039
+  date: 2026-04-12 11:03 UTC
+  summary: 审稿报告 weak reject，启动两轨修改：Track A 写作修正（C2/C3/S1-S5），Track B 补 7B SFT 实验修复
+    C1 SVD 跨架构缺陷
+  rationale: 审稿核心问题：(1) C1 SVD 对比 7B RL vs 3B SFT 存在架构不匹配+LoRA rank 约束混淆，Table 1 RL-SFT
+    行跨维度相减数学不可能；(2) C2 behavioral mismatch 观察性证据被包装为因果结论；(3) C3 线性退化 overclaim。修复策略：补
+    7B SFT 实验（same arch controlled baseline）彻底解决 C1；写作弱化 overclaim 解决 C2/C3/S1/S5；补缺失引用解决
+    S3；Figure 1 补全数据点解决 S4。
+  related_experiments:
+  - exp_id: exp_006_phase1d_v2
+    role: context
+    result: negative
+  - exp_id: exp_003_phase1b_svd_analysis
+    role: evidence
+    result: success
+  depends_on:
+  - D038
+  - D032
+- id: D040
+  date: 2026-04-12 11:09 UTC
+  summary: C1 确认为论文描述错误：SVD 分析实际用 7B SFT（同架构），非 3B。修正描述即可，取消 Track B 补实验
+  rationale: Agent 查 svd_three_way.py 代码确认：SFT 模型路径为 Qwen2.5-7B-SFT-N2，dW_rl_sft 直接相减且未报错，证明同维度。论文
+    §2.2 误写为 "Qwen2.5-3B, LoRA rank 32" 导致审稿人认为跨架构。修正描述+明确区分 SVD 分析用 7B SFT 与 §3 distillation
+    用 3B student 即可。不补新实验，避免改变论文 scope。
+  related_experiments:
+  - exp_id: exp_003_phase1b_svd_analysis
+    role: evidence
+    result: success
+  depends_on:
+  - D039
+- id: D041
+  date: 2026-04-12 12:34 UTC
+  summary: 终止 exp_008：token-level suppression 技术失败，bigram bad_words_ids 未匹配实际 tokenization，数据无因果效力
+  rationale: Reviewer 核实发现 bigram [27,1836] 未能阻止 <search> 生成（tokenization 不匹配），模型仍生成
+    search 标签但闭合标签损坏。em=0 是格式损坏而非移除 search 结构的因果效应。该实验无法用于因果验证，终止释放 GPU 给 exp_009。
+  related_experiments:
+  - exp_id: exp_008_search_suppression_v4
+    role: primary
+    result: failed - suppression未生效
+  depends_on:
+  - D037
+  - D036
+  - D034
+- id: D042
+  date: 2026-04-12 13:32 UTC
+  summary: exp_009 因果验证成功：SFT+oracle API 恢复 teacher 水平（+43-47pp），behavioral mismatch
+    因果链确立
+  rationale: SFT student 接入真实检索 API 后 em_partial 从 0.03-0.11 暴涨至 0.50-0.53，接近 RL teacher（0.45-0.59）。Delta
+    47pp 远超 Go/Stop 阈值（5pp）。证明 student 确实学到搜索策略但缺执行能力。额外发现：n_searches≈1 揭示策略简化（多轮→单轮）。注意：N=8
+    student>teacher 不可直接对比（不同 prompt 集）。
+  related_experiments:
+  - exp_id: exp_009_student_with_api
+    role: primary
+    result: success
+  depends_on: []
+- id: D043
+  date: 2026-04-12 14:02 UTC
+  summary: Round 2 审稿 weak reject (2.75/5)，启动系统性修改：C1(7B eval)+C2(SVD CI)+C5(exp_009写入)+C3(power
+    analysis)+scope缩窄+引用扩充
+  rationale: Round 2 报告 6 个 critical 问题。C5 已被 exp_009 解决。C1 最严重（7B vs 3B 架构断裂）但修复成本极低（纯
+    inference）。C2/C3 需要统计补充。C4/C6 是写作修改。总体判断：所有问题均可修复，修改后有望达到 Findings 接收标准。ARR 截止
+    2026-05-25，时间充裕。
+  related_experiments:
+  - exp_id: exp_009_student_with_api
+    role: evidence_for_C5
+    result: success
+  depends_on:
+  - D042
+- id: D044
+  date: 2026-04-12 15:28 UTC
+  summary: exp_010 确认 capacity confound 不成立：7B SFT(0.122)≈3B SFT(0.112)，SFT 方法本身是瓶颈
+  rationale: 7B full-rank SFT 在 N=2 上 em_partial=0.122，与 3B LoRA SFT(0.112)仅差 1pp，均远低于
+    RL teacher(0.59)。7B 还有 98.4% truncated rate（vs 3B 的 30.7%），表现更严重的 generation 退化。结论：模型容量（7B→3B）不是
+    SFT collapse 主因。注意：训练设置不完全受控（full-rank vs LoRA），作为 limitation 披露。
+  related_experiments:
+  - exp_id: exp_010_7b_sft_eval
+    role: primary
+    result: success
+  depends_on:
+  - D043
+- id: D045
+  date: 2026-04-12 15:34 UTC
+  summary: 'D044 措辞修正：exp_010 弱化 capacity confound 假说（非排除），7B SFT(0.122)≈3B SFT(0.112)，caveats:
+    full-rank vs LoRA'
+  rationale: Reviewer 指出"排除"措辞过强：7B 与 3B 训练方式不同（full-rank vs LoRA rank 32），不是纯 capacity
+    消融。修正为"弱化"以准确反映证据强度。
+  related_experiments:
+  - exp_id: exp_010_7b_sft_eval
+    role: primary
+    result: success
+  depends_on:
+  - D044
+- id: D046
+  date: 2026-04-12 15:57 UTC
+  summary: Round 3 weak accept (3.25/5)，进入 camera-ready 修改。不训练 7B pooled SFT，软化 caption
+    即可
+  rationale: Round 3 从 2.75→3.25，无 critical 问题。W1 要求 7B N=4/N=8 数据，但现有 7B SFT-N2 只训练
+    N=2，训练 7B pooled 成本效益不高——exp_009 因果证据（+47pp）已是更强论据。选择软化 caption 措辞而非追加训练。
+  related_experiments:
+  - exp_id: exp_009_student_with_api
+    role: key_evidence
+    result: success
+  - exp_id: exp_010_7b_sft_eval
+    role: supporting
+    result: success
+  depends_on:
+  - D045
+- id: D047
+  date: 2026-04-12 16:07 UTC
+  summary: 'D047: 用户授权 8h GPU 提升论文水平。分配：BM25 retrieval (~2h) + 7B pooled SFT train+eval
+    (~5h) + strategy analysis'
+  rationale: weak accept (3.25) 需要进一步提升。BM25 实验填补 oracle upper-bound gap（审稿人 W2），是最高边际价值投入。7B
+    pooled SFT 完整 capacity isolation（W1）。Strategy analysis 加深 n_searches=1 发现。总计 ~7.5h，在
+    8h 预算内。
+  related_experiments:
+  - exp_id: exp_009_student_with_api
+    role: basis
+    result: success
+  - exp_id: exp_010_7b_sft_eval
+    role: basis
+    result: success
+  depends_on:
+  - D046
+- id: D048
+  date: 2026-04-12 16:16 UTC
+  summary: Strategy analysis 修正：teacher 本身 >95% 单次搜索，student 忠实复现（Jaccard~0.95），"strategy
+    simplification"叙述有误需修正
+  rationale: Strategy analysis 发现 teacher 在 N=2/4/8 上分别 95.8%/98.8%/98.2% 为单次搜索。Student
+    的 query Jaccard similarity ~0.95, median=1.0，说明蒸馏质量极高。原论文 §3.5 "student 简化了多轮搜索策略"的叙述不正确——teacher
+    本身就主要单次搜索。修正后反而强化了 behavioral mismatch 论点：student 高保真复现了策略，问题纯粹是执行环境缺失。em_full
+    低是概率叠加效应（~50%^N），非策略退化。
+  related_experiments:
+  - exp_id: exp_009_student_with_api
+    role: data_source
+    result: success
+  depends_on:
+  - D042
+- id: D049
+  date: 2026-04-12 21:09 UTC
+  summary: 'D049: exp_012 修正 capacity 叙事——capacity 是 contributing factor (~12%)，behavioral
+    mismatch 是 dominant cause (~88%)'
+  rationale: exp_012 用 clean comparison（7B vs 3B 同数据同训练方式）证明 7B 确实优于 3B（+5.8~6.4pp），推翻
+    exp_010 的"7B≈3B"结论（exp_010 受训练设置 confound 影响）。但 7B(0.170) 仅达 RL teacher(0.59)
+    的 29%，capacity 仅解释 gap 的 ~12%。论文叙事从"capacity doesn't matter"调整为"capacity is minor
+    contributing factor (~12%), behavioral mismatch dominates (~88%)"。
+  related_experiments:
+  - exp_id: exp_012_7b_pooled_sft_v2
+    role: clean capacity comparison
+    result: 7B > 3B by 5.8-6.4pp, but only 29% of teacher
+  - exp_id: exp_010_7b_sft_eval
+    role: prior capacity test (confounded)
+    result: 7B≈3B, now superseded by exp_012
+  - exp_id: exp_009_student_with_api
+    role: behavioral mismatch causal test
+    result: +43-47pp with oracle API
+  depends_on:
+  - D045
+  - D042
+- id: D050
+  date: 2026-04-12 22:46 UTC
+  summary: 'D044 addendum: D044 结论 "7B≈3B capacity confound 不成立" 已被 D049 推翻（exp_012
+    证明 capacity ~12-14%）'
+  rationale: D044 基于 exp_010 得出 7B(0.122)≈3B(0.112)，但 exp_010 有训练设置 confound（N=2-only
+    data）。exp_012 用 clean comparison 证明 7B(0.171) > 3B(0.112)。标注 D044 为 superseded
+    by D049 避免误读。
+  related_experiments:
+  - exp_id: exp_010_7b_sft_eval
+    role: confounded comparison
+    result: superseded
+  - exp_id: exp_012_7b_pooled_sft_v2
+    role: clean comparison
+    result: 7B > 3B by 5.4-6.3pp
+  depends_on:
+  - D044
+  - D049
+- id: D051
+  date: 2026-04-12 22:51 UTC
+  summary: 'D051: 审稿终稿 Accept (3.75/5)，进入 camera-ready editorial 修改'
+  rationale: 'R3 审稿综合评分 3.75/5（R1: 4/5 Accept, R2: 3.5/5 Weak Accept）。核心证据链获认可：因果验证
+    + capacity 量化 + BM25 dose-response + query fidelity。仅需 3 个 editorial 修改：§1 措辞统一、Conclusion
+    补 practical implication、§3.6 加 caveat。'
+  related_experiments:
+  - exp_id: exp_012_7b_pooled_sft_v2
+    role: capacity quantification
+    result: ~12-14% upper bound
+  - exp_id: exp_011_bm25_retrieval
+    role: realistic retrieval
+    result: +12.2pp
+  - exp_id: exp_009_student_with_api
+    role: causal validation
+    result: +47.3pp
+  depends_on:
+  - D049
+- id: D052
+  date: 2026-04-13 16:02 UTC
+  summary: 'D052: 论文叙事重构——从实验报告流改为 thesis-driven，新 thesis 聚焦 agentic SFT distillation
+    silent failure mode'
+  rationale: 用户质疑当前叙事薄弱点（"不给 API 是 bug"）。R1/R2 低分的根源是读者感知论文为 trivial bug fix。新 thesis
+    将论文 reframe 为"诊断 agentic distillation 通用 silent failure 的协议"，提升投稿价值。24h GPU 预算用于
+    generality claim 加强。风险：回归已 Accept 的 camera-ready 版本，43 天时间线紧。Reviewer 建议采取**增量重构**而非全面重写——保留已验证的技术章节文本，重写
+    Introduction + Related Work + Conclusion + section transitions，protecting 已审查的实验内容。
+  related_experiments: []
+  depends_on:
+  - D051
+- id: D053
+  date: 2026-04-14 01:02 UTC
+  summary: 接受 v3.1 (commit f9107f3) 为 ACL 2026 投稿版，正文 7pp 满足 8pp 硬限
+  rationale: cut v3.1 通过 §2 Phase 1a/1b/1c 合并 + §1 Table 1 inline + §3.3 Truncation
+    留 2 句 + §3.1/§3.2 压缩 + framework figure 单列，将正文从 13pp 裁至 7pp（1pp 余量）。Review mode
+    strict gate 0/0/0 通过。三张核心表 (oracle/BM25/cross-backbone) 独立保留，W2 跨 backbone 叙事链完整。残留：D053
+    lineno 042/043 cosmetic + dispersion CI per-sample JSON 在 autodl-ltc 不在 MCP registry
+    无法 ssh sync，两项 deferred to camera-ready。
+  related_experiments:
+  - exp_id: exp_013
+    role: core_evidence
+    result: W2 cross-backbone Llama-1B 复现 silent failure 签名
+  depends_on: []
+- id: D054
+  date: 2026-04-14 07:10 UTC
+  summary: exp_019 提前至 P1, GPU 顺序改为 exp_016 > exp_019 > exp_017 > exp_018
+  rationale: Reviewer 审查发现 exp_017 gate 阈值 (5pp 绝对) 直接依赖 T_honest 分母, 若 exp_019 后跑可能迫使
+    exp_017 翻结论 (同一个 5pp 在 0.455 baseline 下是 11.6% 相对贡献, 在 0.20 baseline 下是 28.6%).
+    exp_019 提前锁定 T_honest 后再派 exp_017, 并把 exp_017 gate 从绝对阈值改为相对贡献率 (与 T_honest 挂钩).
+    exp_018 本就依赖 exp_019 的 matched 数字写 per-seed Δ_oracle 报告, 顺序不变. exp_016 仍占 P0 (C1
+    passage-redaction), exp_019 P1 (2-3h), exp_017 P2 (2.5h), exp_018 P3 (4-5h).
+  related_experiments:
+  - exp_id: exp_016_passage_redaction
+    role: P0 running
+    result: pending
+  - exp_id: exp_019_teacher_matched_replay
+    role: P1 hard prerequisite for exp_017
+    result: scheduled
+  - exp_id: exp_017_capacity_separation
+    role: P2 gate depends on T_honest
+    result: scheduled
+  - exp_id: exp_018_seed_variance
+    role: P3 depends on exp_019 matched denominators
+    result: scheduled
+  depends_on:
+  - D060
+  - D061
+- id: D055
+  date: 2026-04-14 08:35 UTC
+  summary: 'D055: exp_016 verdict = partial_mechanism (leakage 77% / retrieval 23%),
+    oracle upper bound 叙事实质下调'
+  rationale: 'exp_016 4 conditions 完成, Reviewer 独立核实数字: no_api=0.021, oracle_full=0.498,
+    oracle_redacted_full=0.131, oracle_redacted_half=0.373. Δ_full_redact = oracle_redacted_full
+    − no_api = 11.0pp [8.8, 13.2] (bootstrap 10k seed 42). 落入 pre-registered gate
+    中间带 (+5..+25pp), 分支 = partial_mechanism. 机制分解: leakage 贡献 36.7pp (77% 总 oracle
+    gain), 非 leakage retrieval 贡献 11.0pp (23%). Half-redact 0.373 支持 dose-response
+    双机制. 论文修改: (1) Abstract/§1/§3.2/§5 oracle upper bound 数字从 +43-47pp 分解为 +11pp non-leakage
+    + +37pp leakage, 或改为 "oracle 含 ~11pp retrieval-quality component"; (2) Figure
+    5 gap decomposition 加 leakage 层; (3) response letter C1 正面承认 leakage 主导, 不 spin;
+    (4) exp_017 gate 分母若在 oracle 条件下需改用 leakage-free (oracle_redacted_full − no_api);
+    (5) exp_018 扩充条件加 oracle_redacted_full 做 seed robustness 背书 (+33% GPU ~ 1.3h).
+    Deviation log (word-boundary + quote-strip) 必须在 response letter + paper appendix
+    主动披露.'
+  related_experiments:
+  - exp_id: exp_016_passage_redaction
+    role: C1 blocking rebuttal verdict
+    result: partial_mechanism, leakage-dominant 77%/23%
+  depends_on:
+  - D054
+- id: D056
+  date: 2026-04-14 08:45 UTC
+  summary: 'D056: accept exp_016 redaction deviation (substring → word-boundary +
+    quote-strip) as methodologically necessary'
+  rationale: 'exp_016 Phase 0 dry-run 揭露 pre-registered substring redaction 病态：短 gold
+    (例 "no") 会在长 token (例 "November") 中触发过度遮蔽，污染 Δ 方向。Reviewer 两次独立判定修正为 word-boundary
+    regex + strip-quotes 在科学上必要。影响评估：修正后的 redaction 更保守（若有偏差方向是低估 leakage），不改变 verdict 方向。7
+    项原承诺（n=125、seed=42、paired bootstrap、dose-response 4 条件、no pre-registered kill
+    condition 触发、oracle 条件不变、metric em_partial 不变）全部保留。Evidence: 125/125 blocks redacted,
+    1663 substitutions (mean 13.3/block), fully_unredactable=[], commit 7cf099d. 必须进入
+    response letter C1 主动披露 + paper §3 appendix Deviation log 小节（plan.md §3 已补）。'
+  related_experiments:
+  - exp_id: exp_016_passage_redaction
+    role: primary
+    result: negative
+  depends_on:
+  - D055
+- id: D057
+  date: 2026-04-14 08:45 UTC
+  summary: 'D057: v3.6 paper revision scope = BROAD (Abstract + §1 + §3.2 + §3.5 +
+    §5 + Figure 5 + Appendix + Response C1), REJECT §3.5-only minimal scope (extends
+    D055)'
+  rationale: exp_016 verdict partial_mechanism (D055) 意味着 oracle = retrieval upper
+    bound 因果头条不成立。Reviewer 明确：paper 存在独立的 "oracle = retrieval upper bound" 叙事线贯穿
+    §1/§3.2/§3.5/§5/Abstract，只改 §3.5 会被审稿人攻击为避重就轻。因此 v3.6 rewrite 必须覆盖全部位置：(1)
+    Abstract framing 从 "retrieval upper bound" → "leakage-inclusive upper bound with
+    retrieval-quality ~23% (+11pp) / leakage-assisted decoding ~77% (+37pp)"; (2)
+    §1 保留 "catastrophic SFT collapse" headline (no_api=0.021 floor 不变)，但 oracle upper
+    bound 段落降级为 leakage-inclusive 分解; (3) §3.2 capacity ceiling 改为 "oracle 的 leakage-free
+    component 才是 retrieval 真上限"; (4) §3.5 按 retrieval 必要但不充分重写; (5) §5 Findings 主动披露
+    redaction ablation; (6) Figure 5 加 dose-response 子图 (0/50/100% × em_partial); (7)
+    Appendix Redaction validation + Deviation log; (8) Response letter C1 从"驳斥"改为"部分承认
+    + 量化分解"。**明确拒绝** §3.5-only minimal scope 作为决策记录。
+  related_experiments:
+  - exp_id: exp_016_passage_redaction
+    role: primary
+    result: negative
+  depends_on:
+  - D055
+  - D056
+- id: D060
+  date: 2026-04-14 08:45 UTC
+  summary: 'D060: exp_019 teacher matched replay 必须同时提供 honest + oracle 两条件 (W3 apples-to-oranges
+    audit)'
+  rationale: 'paper "94.5% drop from teacher 0.455" 结构上是 oracle-teacher vs honest-student
+    — teacher 在 gold-passage 注入下评估，student 无 API。headline claim 不能只跑 oracle teacher
+    修复，必须提供 honest teacher baseline 作 §1/§3/§5/Abstract/Figure 5 的 ground-truth 比较点。同时
+    exp_002v3 的 0.455 用 50-sample HotpotQA 子集 + gold-passage injection + 与 phase1d_v2
+    N=8 125-prompt 不同 split，provenance 有缺陷。exp_019 单 run 两条件设计同时修 apples-to-oranges
+    + provenance：matched 125-prompt split + honest 条件 (FlashRAG 真检索) + oracle 条件 (positional
+    j-th block)。决策树 3 分支 T_honest ≥0.40 / 0.25-0.40 / <0.25 对应 number_replace_only
+    / framing_micro_adjust / §1 rewrite。'
+  related_experiments:
+  - exp_id: exp_019_teacher_matched_replay
+    role: W3 blocking fix
+    result: scheduled
+  - exp_id: exp_002v3_phase1a_collapse_curve
+    role: stale source
+    result: superseded on completion
+  depends_on: []
+- id: D061
+  date: 2026-04-14 08:45 UTC
+  summary: 'D061: exp_018 per-seed 扩充 oracle_redacted_full 条件 (+33% GPU, ~1.3h) 做 seed
+    robustness 背书 partial_mechanism verdict'
+  rationale: exp_018 原 spec 仅 oracle_full + no_api per-seed seed variance。D055 partial_mechanism
+    verdict 需 seed-level 确认 leakage/retrieval 分解稳健——若 oracle_redacted_full 在 seed 3-5
+    波动 >±3pp，77%/23% 分解可能崩塌。扩充 oracle_redacted_full 到 exp_018 per-seed (3 seeds ×
+    +1 condition)，GPU 成本 +33% (~1.3h)。**明确**：扩充条件仅 `oracle_redacted_full`（full redaction
+    density），不扩充 `oracle_redacted_half`——half 条件不是主分解的 anchor，seed robustness
+    只需背书 full redact 和 oracle_full 之间的 decomposition。exp_017 gate 分母若在 oracle 条件下需改用
+    leakage-free (oracle_redacted_full − no_api = 0.110) 而非 oracle_full − no_api = 0.477，使
+    middle band 阈值更敏感——spawn exp_017 前必须同步更新 plan.md §gate 分母和阈值（plan.md
+    目前尚未创建，spawn 前由 main agent 基于 D061 写入）。
+  related_experiments:
+  - exp_id: exp_018_seed_variance
+    role: spec extended
+    result: scheduled
+  - exp_id: exp_017_capacity_separation
+    role: gate denominator change
+    result: scheduled
+  depends_on:
+  - D055

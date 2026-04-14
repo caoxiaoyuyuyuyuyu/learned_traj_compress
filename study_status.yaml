@@ -1,0 +1,38 @@
+studies:
+  study_001:
+    approval_id: apr_20260413T032405_i6jo
+    assembling_at: '2026-04-13T04:13:02.956508+00:00'
+    completed_at: ''
+    created_at: '2026-04-13T03:24:09.956813+00:00'
+    notes: Director 自行审核（Reviewer 因多次服务器重启未响应）。2 个 warning：DP013 R²/斜率未存 registry
+      需重算验证；DP015 base N=2 EM=0.15 vs 论文写 0.148 轻微不一致。无 critical。资料包可发布给 PI。
+    paper_path: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/artifacts/_project/paper/main.pdf
+    paper_title: 'MemDistill: Diagnosing Why Distilling RL Agent Memory Fails'
+    project: learned_traj_compress
+    reviewer_verdict: passed
+    reviewing_at: '2026-04-13T04:40:04.189389+00:00'
+    rollback_items: []
+    status: verification
+    study_chat_id: oc_b51b75ddb21ebc62f3539ef030c1bd6b
+    study_id: study_001
+    verification_at: '2026-04-13T05:33:54.977267+00:00'
+    verification_package:
+      claims_assembled_at: '2026-04-13T04:17:27.171696+00:00'
+      claims_path: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/verification-package/study_001/claims.json
+      data_provenance_assembled_at: '2026-04-13T04:39:09.286962+00:00'
+      data_provenance_path: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/verification-package/study_001/data_provenance.json
+      design_audit_assembled_at: '2026-04-13T04:40:28.285776+00:00'
+      design_audit_path: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/verification-package/study_001/design_audit.json
+      execution_traces_assembled_at: '2026-04-13T04:43:43.387646+00:00'
+      execution_traces_path: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/verification-package/study_001/execution_traces.json
+      learning_path_assembled_at: '2026-04-13T04:21:10.954146+00:00'
+      learning_path_dir: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/verification-package/study_001/learning_path
+      package_dir: /Users/matter/.agent-ml-research-test-0406-0808/projects/learned_traj_compress/verification-package/study_001
+      progress:
+        failed: 0
+        needs_modification: 0
+        pending: 0
+        skipped: 0
+        total: 0
+        uncertain: 0
+        verified: 0

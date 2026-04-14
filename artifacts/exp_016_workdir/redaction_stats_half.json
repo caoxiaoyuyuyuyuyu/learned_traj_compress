@@ -1,0 +1,22 @@
+{
+  "_correction_note": "This file's 325-total / 2.60-per-passage count compared against redaction_stats.json's 1663 full-condition count is APPLES-TO-ORANGES: 325 comes from eval-details regex post-hoc counting, 1663 comes from Phase 0 dry-run preprocessing statistics. For apples-to-apples comparison, see redaction_stats_apples_to_apples.json (full_eval_total_redacted=753, ratio_half_over_full=0.4316, per-passage density ~50%).",
+  "source": "oracle_redacted_half_eval.json details (post-hoc regex scan)",
+  "n_prompts": 125,
+  "n_passages_with_redactions": 125,
+  "first_N_redacted": 125,
+  "total_redacted_substitutions": 325,
+  "mean_substitutions_per_redacted_passage": 2.6,
+  "mean_substitutions_per_all_passages": 2.6,
+  "redacted_passage_indices_sample_first20": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+  "redacted_passage_indices_sample_last20": [105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124],
+  "methodology_note": "half-subset redaction applied to first N of 125 passages; exact stats re-computed post-hoc from eval details via regex scan of [REDACTED] tokens. Post-hoc finding: 'half' in exp_016 refers to ~half the substitution DENSITY per passage (mean 2.6 [REDACTED] tokens per passage vs 13.3 in full condition), not the first half of passages; all 125 passages received some redaction. Original redaction_stats.json covers the full-redacted condition only.",
+  "cross_ref_full_condition": {
+    "n_prompts": 125,
+    "n_blocks_total": 125,
+    "n_blocks_with_redaction": 125,
+    "n_redacted_substitutions_total": 1663,
+    "mean_redactions_per_block": 13.304,
+    "fully_unredactable_prompt_ids": [],
+    "note": "Dry-run (Phase 0) output from scripts/exp_016_passage_redaction.py --phase 0 on phase1d_v2 N=8 test split (125 prompts). Gate n_blocks_with_redaction>=100 passed: 125/125. Word-boundary + quote-stripped gold matching (commit 7cf099d) prevents catastrophic over-redaction from short golds (e.g. 'no' matching 'November')."
+  }
+}

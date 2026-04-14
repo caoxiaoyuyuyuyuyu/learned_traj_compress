@@ -1,0 +1,40 @@
+{
+  "mean_em_partial": {
+    "no_api": 0.021,
+    "oracle_full": 0.498,
+    "oracle_redacted_full": 0.131,
+    "oracle_redacted_half": 0.373
+  },
+  "n": 125,
+  "n_resamples": 10000,
+  "seed": 42,
+  "deltas": {
+    "oracle_full": {
+      "delta_em_partial": 0.477,
+      "ci95_lo": 0.446,
+      "ci95_hi": 0.509,
+      "p_boot_gt0": 1.0
+    },
+    "oracle_redacted_full": {
+      "delta_em_partial": 0.11,
+      "ci95_lo": 0.088,
+      "ci95_hi": 0.132,
+      "p_boot_gt0": 1.0
+    },
+    "oracle_redacted_half": {
+      "delta_em_partial": 0.352,
+      "ci95_lo": 0.322,
+      "ci95_hi": 0.382,
+      "p_boot_gt0": 1.0
+    }
+  },
+  "oracle_full_vs_oracle_redacted_full_delta": {
+    "delta_em_partial": 0.367,
+    "ci95_lo": 0.335,
+    "ci95_hi": 0.4,
+    "p_boot_gt0": 1.0,
+    "n_resamples": 10000,
+    "seed": 42,
+    "interpretation": "leakage: oracle_full \u2212 oracle_redacted_full (paired)"
+  }
+}
