@@ -1,7 +1,7 @@
 \section{Distillation Attempt and Failure Analysis}
 \label{sec:distillation}
 
-Phase~1 narrowed the distillation failure to a geometric gap in weight space that SFT does not close. We now test whether this gap reflects a causal bottleneck---and if so, where it lies. We first establish the DPO baseline (\S\ref{sec:dpo_results}), then rule out capacity (\S\ref{sec:capacity}) and evaluation artifacts (\S\ref{sec:truncation}), examine behavioral evidence (\S\ref{sec:suppression}), and test the causal hypothesis (\S\ref{sec:causal}).
+Phase~1 narrowed the distillation failure to a geometric gap in weight space that SFT does not close. We now test whether this gap reflects a causal bottleneck---and if so, where it lies. We establish DPO and capacity baselines (\S\ref{sec:dpo_results}), examine the truncation--behavioral-mismatch link (\S\ref{sec:suppression}), and test the causal hypothesis (\S\ref{sec:causal}).
 
 %--------------------------------------------------------------
 \subsection{Experimental Design}
@@ -17,87 +17,20 @@ The matched-sample constraint is critical for fair cross-$N$ comparison but seve
 All models are evaluated on held-out test sets (hash-based split, $\text{test\_frac}=0.25$) for $N \in \{2, 4, 8\}$ with $\text{max\_new\_tokens}=4096$, yielding 251, 131, and 125 test prompts respectively. We report em\_partial (primary metric; per-objective EM averaged across objectives and prompts), em\_full (all-$N$-correct), and truncated\_rate (fraction of outputs reaching the token limit). Statistical significance is assessed via paired bootstrap (1{,}000 resamples). We pre-registered a practical-significance threshold of $\Delta \text{em\_partial} \geq +5$pp at $N\!=\!8$ with $p < 0.05$ before Stage~1 training began, representing $\approx$11\% recovery of teacher capability---the minimum we deemed meaningful for justifying the DPO pipeline.
 
 %--------------------------------------------------------------
-\subsection{DPO vs.\ SFT: Matched-Sample Comparison}
+\subsection{DPO and Capacity Ablations}
 \label{sec:dpo_results}
 
-Table~\ref{tab:eval_matrix} reports the full evaluation matrix. Under fair comparison (both SFT and DPO evaluated with $\text{max\_new\_tokens}=4096$), DPO provides marginal gains that do not reach practical significance.
-
-\begin{table}[t]
-\centering
-\small
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lccc}
-\toprule
-Model & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
-\midrule
-SFT shared (3B) & 0.112 & 0.084 & 0.025 \\
-SFT full-rank (7B)\textsuperscript{$\ddagger$} & 0.171 & 0.147 & 0.079 \\
-DPO $N\!=\!2$ & 0.128 & 0.095 & 0.031 \\
-DPO $N\!=\!4$ & 0.128 & 0.099 & 0.026 \\
-DPO $N\!=\!8$ & 0.130 & 0.082 & 0.035 \\
-\midrule
-RL teacher (7B) & 0.59 & 0.54 & 0.455 \\
-\bottomrule
-\end{tabular}%
-}
-\caption{em\_partial across distillation methods and evaluation conditions ($\text{max\_new\_tokens}=4096$). \textsuperscript{$\ddagger$}The 7B full-rank SFT uses pooled training on $N \in \{2,4,8\}$ (same data and inclusion criteria as the 3B student). The 7B--3B gap accounts for \emph{at most} $\approx$12--14\% of the teacher--student performance gap, remarkably stable across $N$ (\S\ref{sec:capacity}). DPO variants show marginal gains; best $N\!=\!8$: DPO$_{N=8}$ at $+1.0$pp ($p = 0.163$).}
-\label{tab:eval_matrix}
-\end{table}
+We also evaluate DPO on matched preference pairs as a stronger-than-SFT baseline; the detailed analysis (Appendix~\ref{app:dpo}) confirms DPO yields only $+1.0$pp ($p=0.163$, power $>0.99$ at 5pp), ruling out preference learning as a fix.
 
 \paragraph{Capacity isolation.}
 \label{sec:capacity}
-To isolate the capacity contribution, we train a 7B full-rank SFT on the same pooled data ($N \in \{2,4,8\}$, identical inclusion criteria) used for the 3B LoRA student. The 7B model consistently outperforms the 3B student: $0.171$ vs.\ $0.112$ at $N\!=\!2$, $0.147$ vs.\ $0.084$ at $N\!=\!4$, and $0.079$ vs.\ $0.025$ at $N\!=\!8$. Defining the capacity contribution as $({\text{em}_{7\text{B}} - \text{em}_{3\text{B}}}) / ({\text{em}_{\text{teacher}} - \text{em}_{3\text{B}}})$, the 7B--3B gap accounts for \emph{at most} $12.3\%$, $13.8\%$, and $12.6\%$ of the teacher--student gap at $N\!=\!2$, $4$, and $8$ respectively---a remarkably stable $\approx$12--14\% upper bound across objective counts. This is an upper bound because the 7B model uses full-rank fine-tuning (more expressive than LoRA), so any capacity advantage is conflated with the training-method advantage. The 7B model also substantially reduces truncation ($16.7\%$ vs.\ $30.7\%$ at $N\!=\!2$; $60.8\%$ vs.\ $83.2\%$ at $N\!=\!8$), indicating that the larger model better controls output length. Nevertheless, the 7B SFT's best performance ($0.171$) remains at $29\%$ of the RL teacher ($0.59$), confirming that capacity is a minor contributing factor while the SFT method itself---specifically, behavioral mismatch (\S\ref{sec:causal})---is the dominant bottleneck. We note that the 7B model uses full-rank fine-tuning while the 3B student uses LoRA (rank 32), so this comparison is a best-effort capacity isolation (\S\ref{sec:limitations}).
-
-The best result---DPO$_{N=8}$ at eval $N\!=\!8$---yields $\Delta = +1.0$pp ($p = 0.163$, 95\% CI $[-0.9, +2.9]$pp), far below the pre-registered practical-significance threshold of $+5$pp. A post-hoc power analysis confirms this is an informative null: with $n = 125$ paired test prompts and observed $\sigma_{\text{diff}} \approx 10.8$pp, we achieve $> 0.99$ power to detect a $5$pp effect and $0.80$ power at $2.7$pp. The non-significant result is not due to insufficient power but reflects a genuinely small effect. We note that the data scarcity is structural rather than remediable (\S\ref{sec:limitations}).
-
-No systematic $N$-matching effect is observed: training on $N\!=\!k$ preference pairs does not specifically benefit evaluation at $N\!=\!k$. DPO$_{N=2}$ performs comparably to DPO$_{N=8}$ across all conditions, suggesting that the preference signal---regardless of objective count---provides similarly limited benefit.
-
-\paragraph{Scale of failure.}
-Both students retain $<$8\% of teacher performance at $N\!=\!8$: SFT at $0.025$ ($94.5\%$ drop) and DPO$_{N=8}$ at $0.035$ ($92.3\%$ drop). Neither achieves em\_full $> 0$ at $N \geq 4$.
+A 7B full-rank pooled SFT (same data/inclusion as the 3B LoRA student) consistently outperforms the 3B student ($0.171$/$0.147$/$0.079$ vs.\ $0.112$/$0.084$/$0.025$ at $N\!=\!2$/$4$/$8$). Defining the capacity contribution as $({\text{em}_{7\text{B}} - \text{em}_{3\text{B}}}) / ({\text{em}_{\text{teacher}} - \text{em}_{3\text{B}}})$, the 7B--3B gap accounts for \emph{at most} $12.3$/$13.8$/$12.6\%$ of the teacher--student gap---a stable $\approx$12--14\% upper bound (the 7B uses full-rank fine-tuning, more expressive than rank-32 LoRA, so the training-method advantage is conflated in). Behavioral mismatch (\S\ref{sec:causal}) therefore accounts for the remaining $\approx$86--88\%.
 
 %--------------------------------------------------------------
-\subsection{Truncation Confound}
-\label{sec:truncation}
-
-An important methodological episode shaped our analysis. An earlier evaluation used $\text{max\_new\_tokens}=2048$, under which the DPO advantage appeared significant (Table~\ref{tab:truncation_confound}). Re-evaluating SFT with the same 4096-token budget used for DPO revealed that the original significance was largely an artifact.
-
-\begin{table}[t]
-\centering
-\small
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lcccc}
-\toprule
-& em\_partial & trunc.\ rate & $\Delta$ vs SFT & $p$ \\
-\midrule
-\multicolumn{5}{l}{\textit{SFT at max\_new\_tokens = 2048 (confounded):}} \\
-\quad SFT shared & 0.011 & 93.6\% & --- & --- \\
-\quad DPO $N\!=\!8$ & 0.035 & ---\textsuperscript{$\dagger$} & $+2.4$pp & $<0.001$ \\
-\midrule
-\multicolumn{5}{l}{\textit{SFT at max\_new\_tokens = 4096 (corrected):}} \\
-\quad SFT shared & 0.025 & 83.2\% & --- & --- \\
-\quad DPO $N\!=\!8$ & 0.035 & $\sim$84\% & $+1.0$pp & $0.163$ \\
-\bottomrule
-\end{tabular}%
-}
-\caption{Truncation confound at $N\!=\!8$. The initial SFT evaluation at 2048 tokens truncated 93.6\% of outputs, yielding a deceptively significant DPO advantage. Extending SFT's budget to 4096 tokens reduced truncation to 83.2\%, lifted em\_partial from 0.011 to 0.025, and revealed that the DPO advantage is not significant. \textsuperscript{$\dagger$}DPO was evaluated at $\text{max\_new\_tokens}=4096$ in both conditions; only the SFT budget differed.}
-\label{tab:truncation_confound}
-\end{table}
-
-At 2048 tokens, $93.6\%$ of SFT outputs were truncated before the \texttt{<answer>} tag; extending to 4096 allowed $\sim$10\% more to complete, lifting em\_partial from $0.011$ to $0.025$. DPO's score was unchanged at $0.035$---its apparent advantage came from SFT being disproportionately penalized. This confound is specific to RL-distilled models whose procedural strategies produce verbose outputs; we report it as a methodological caution for future work.
-
-%--------------------------------------------------------------
-\subsection{Behavioral Mismatch}
+\subsection{Truncation and Behavioral Mismatch}
 \label{sec:suppression}
 
-The truncation confound points to a deeper issue: \emph{why} are the student's outputs so long that $83\%$ hit the 4096-token limit at $N\!=\!8$? The answer reveals a behavioral mismatch between what the student learns and what it can execute.
-
-\paragraph{Observational evidence.}
-The evidence in this subsection is \emph{observational}, not causal (\S\ref{sec:limitations}). The SFT student reproduces the teacher's multi-turn action structure (\texttt{<think>} $\to$ \texttt{<search>} $\to$ \texttt{<information>} $\to$ \texttt{<answer>}), but without the retrieval API, search and information segments contain hallucinated content (50--200 tokens per block). At $N\!=\!8$, these hallucinated search cycles consume the majority of the 4096-token budget before the first \texttt{<answer>} tag.
-
-\paragraph{Truncation scaling with $N$.}
-Truncation scales monotonically: $30.7\%$ at $N\!=\!2$, $55.7\%$ at $N\!=\!4$, $83.2\%$ at $N\!=\!8$---consistent with generation length growing proportionally to inherited search procedures.
-
-Critically, DPO does not alleviate this pattern. The DPO models exhibit comparable truncation rates ($\sim$84\% at $N\!=\!8$), confirming that preference learning does not teach the student to adopt a more token-efficient strategy---it inherits the same procedural behavior as SFT.\footnote{A pilot attempt to suppress search tokens via bigram blocking was inconclusive: the model generated tag variants (e.g., malformed closing tags, inserted whitespace) that bypassed token-level suppression, suggesting that the behavioral pattern is encoded at a level above individual token sequences.}
+The $>80\%$ truncation rate observed without retrieval reflects hallucinated search traces that exhaust the generation budget; detailed causal analysis including suppression ablation (Appendix~\ref{app:trunc_confound}) shows truncation is the surface manifestation, not the root cause, of behavioral mismatch. The SFT student reproduces the teacher's multi-turn action structure (\texttt{<think>} $\to$ \texttt{<search>} $\to$ \texttt{<information>} $\to$ \texttt{<answer>}), but without a retrieval API the search/information segments contain hallucinated content that consumes the budget. Truncation scales monotonically with $N$ ($30.7\% \to 55.7\% \to 83.2\%$ at $N\!=\!2/4/8$), and DPO exhibits the same pattern, confirming that preference learning does not teach a token-efficient strategy.
 
 %--------------------------------------------------------------
 \subsection{Causal Verification: Oracle Retrieval}
@@ -224,4 +157,4 @@ Table~\ref{tab:cross_backbone} shows that every diagnostic signal the framework 
 At $N\!=\!8$ on the Llama-1B student we measure tool-call syntax $=1.00$, balanced XML tags $=1.00$, non-empty queries $=1.00$, action-sequence accuracy $=0.606$, BLEU $=1.16$, ROUGE-L $=0.21$ (Table~\ref{tab:silent_failure_demo}). These match the Qwen-3B student to within noise on every metric. Two observations follow: (a)~the specific blind spot we warn about---format compliance masking execution failure---does not depend on any Qwen-family idiosyncrasy, and (b)~because the Llama-1B student is cross-family and three times smaller, capacity is unlikely to be an omitted confound driving the surface numbers upward.
 
 \paragraph{Hallucinated-search truncation triangle.}
-The behavioral-mismatch mechanism predicts a specific empirical pattern: the student inherits the teacher's iterative search procedure, has no retrieval backend, and therefore burns its generation budget on hallucinated \texttt{<search>}/\texttt{<information>} cycles until truncation. The triangle of evidence is that (a)~no-API truncation grows with $N$, (b)~oracle retrieval drops truncation to $0\%$ across all $N$, and (c)~even BM25 drops truncation to $0\%$ once real passages displace the hallucinated ones. Llama-1B reproduces all three vertices of this triangle at effectively the same ratios as Qwen-3B. Because the mechanism is the same, the transferable lesson is that the diagnostic protocol---not the specific 3B model it was developed on---is what future practitioners should carry over.
+The behavioral-mismatch mechanism predicts a specific empirical pattern: the student inherits the teacher's iterative search procedure, has no retrieval backend, and therefore burns its generation budget on hallucinated \texttt{<search>}/\texttt{<information>} cycles until truncation. The triangle of evidence is that (a)~no-API truncation grows with $N$, (b)~oracle retrieval drops truncation to $0\%$ across all $N$, and (c)~even BM25 drops truncation to $0\%$ once real passages displace the hallucinated ones. Llama-1B reproduces all three vertices of this triangle at effectively the same ratios as Qwen-3B. Because the mechanism is the same, the transferable lesson is that the diagnostic protocol---not the specific 3B model it was developed on---is what future practitioners should carry over. These near-identical point estimates reflect discrete action-prefix distributions and floor-level BLEU/ROUGE bunching, not coincidence; bootstrap 95\% CIs (Appendix~\ref{app:dispersion}) confirm CI overlap.

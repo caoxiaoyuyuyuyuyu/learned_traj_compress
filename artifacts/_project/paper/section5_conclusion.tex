@@ -8,11 +8,8 @@ Applied to MEM1 (7B RL $\to$ 3B SFT, with a cross-backbone Llama-1B replication)
 \subsection{Limitations}
 \label{sec:limitations}
 
-\paragraph{Scope.}
-All experiments use one RL teacher (MEM1, 7B) on one domain (multi-objective RAG QA). Student-side, we cover two backbones and two scales (Qwen2.5-3B and Llama-3.2-1B), spanning cross-family and a ${\sim}3\times$ size difference, and observe the same silent-failure signature on both (\S\ref{sec:cross_backbone}). The literature survey (\S\ref{sec:related}) suggests the silent failure mode likely extends further to other systems evaluated only by format-level, tool-call structural checks, but direct replication on other \emph{teachers} and benchmarks remains future work.
+\paragraph{Scope and capacity isolation.}
+All experiments use one RL teacher (MEM1, 7B) on one domain (multi-objective RAG QA). Student-side we cover two backbones and two scales (Qwen2.5-3B and Llama-3.2-1B, cross-family, ${\sim}3\times$ size difference) and observe the same silent-failure signature on both (\S\ref{sec:cross_backbone}); direct replication on other teachers and benchmarks remains future work. The 7B full-rank pooled SFT quantifies the capacity contribution at $\approx$12--14\% of the teacher--student gap (\S\ref{sec:capacity}), but the full-rank vs.\ LoRA training-method mismatch makes this a best-effort upper bound.
 
-\paragraph{Capacity isolation.}
-A 7B full-rank pooled SFT quantifies the capacity contribution at $\approx$12--14\% of the teacher--student gap across all $N$ (\S\ref{sec:capacity}); however, the training-method mismatch (full-rank vs.\ LoRA) makes this a best-effort bound.
-
-\paragraph{DPO data scarcity.}
-DPO uses only 176 matched pairs ($0.4\%$ perfect rate at $N\!=\!8$), but power exceeds $0.99$ for a 5pp effect (floor 2.7pp). Oracle retrieval uses teacher passages (upper bound); BM25 retrieval confirms the finding generalizes beyond the oracle setting. Training a 3B RL baseline and cross-task generalization remain as future work.
+\paragraph{DPO data scarcity and retrieval oracle.}
+DPO uses only 176 matched pairs ($0.4\%$ perfect rate at $N\!=\!8$), a structural consequence of multi-objective collapse, not a remediable sampling issue; power exceeds $0.99$ for a 5pp effect (floor 2.7pp). Oracle retrieval uses teacher passages and is thus an upper bound, but BM25 retrieval confirms the finding generalizes beyond the oracle setting ($+6$--$12$pp, truncation $\to 0\%$).
