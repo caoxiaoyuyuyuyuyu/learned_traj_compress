@@ -61,15 +61,28 @@ def _flatten_golds(golds):
 REDACTED_TOKEN = "[REDACTED]"
 
 
+def _clean_gold(gold: str) -> str:
+    """Strip surrounding quotes and common wrapping punctuation so that
+    literal gold strings like '"the Gentle Don"' match the unquoted text."""
+    return gold.strip().strip("\"'“”‘’`.,;:!?()[]{}")
+
+
 def _build_gold_pattern(gold: str) -> re.Pattern:
-    """Build whitespace-flexible, case-insensitive pattern matching gold."""
-    # Escape gold then make internal whitespace flexible (\s+) so tokenisation
-    # variants ("Albert  Einstein", "Albert\nEinstein") still match. Case-
-    # insensitive to approximate _norm's lower().
-    parts = [re.escape(tok) for tok in re.split(r"\s+", gold.strip()) if tok]
+    """Build whitespace-flexible, case-insensitive, word-boundary-anchored pattern.
+
+    Word-boundary anchoring prevents catastrophic over-redaction for short
+    yes/no/single-char golds (e.g. 'no' matching inside 'November'/'novelist').
+    This is the _minimum-necessary_ reading of "substring-only redaction"
+    — substring of the BLOCK, not substring of arbitrary words.
+    """
+    gold = _clean_gold(gold)
+    parts = [re.escape(tok) for tok in re.split(r"\s+", gold) if tok]
     if not parts:
         return None
     pat = r"\s+".join(parts)
+    # Use lookaround word boundaries that are Unicode-friendly. \b handles
+    # ASCII well; good enough for Wikipedia English text.
+    pat = r"\b" + pat + r"\b"
     return re.compile(pat, re.IGNORECASE)
 
 
