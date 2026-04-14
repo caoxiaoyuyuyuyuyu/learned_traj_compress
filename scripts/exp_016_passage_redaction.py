@@ -143,6 +143,26 @@ def redact_info_block_tag(full_block: str, gold_answers, mode: str = "full"):
 
 
 # ── Oracle map loader (phase1d_v2 N=8) ───────────────────────────────
+_INFO_BLOCK_KEEP_TAGS_RE = re.compile(r"<information>.*?</information>", re.DOTALL)
+
+
+def _extract_information_blocks(text):
+    return [m.group(0) for m in _INFO_BLOCK_KEEP_TAGS_RE.finditer(text)]
+
+
+def _get_all_assistant_texts(item):
+    if "responses" in item:
+        return [r["full_assistant"] for r in item["responses"] if "full_assistant" in r]
+    if "assistant_content" in item:
+        return [item["assistant_content"]]
+    return []
+
+
+def _get_prompt_text(item):
+    assert "user_content" in item
+    return item["user_content"]
+
+
 def load_phase1d_v2_oracle(raw_traj_path: str, split_seed: int = 42):
     """Load N=8 test-split items + per-prompt oracle info-block lists.
 
@@ -150,16 +170,12 @@ def load_phase1d_v2_oracle(raw_traj_path: str, split_seed: int = 42):
         items: list of dicts with keys user_content, gold_answers
         oracle_map: dict[user_content] -> list[str] (full <information> blocks)
     """
-    # Defer imports so Phase 0 dry-run works without torch/peft.
     _scripts_dir = os.path.abspath(os.path.dirname(__file__))
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
     from utils.split import assign_split  # noqa: E402
-    from eval_sft_with_api import (  # noqa: E402
-        extract_information_blocks,
-        _get_all_assistant_texts,
-        get_prompt_text,
-    )
+    extract_information_blocks = _extract_information_blocks
+    get_prompt_text = _get_prompt_text
 
     with open(raw_traj_path) as f:
         raw = json.load(f)
