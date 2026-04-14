@@ -7,19 +7,19 @@ It did not succeed on either backbone. The Qwen-3B student achieves $\text{em\_p
 
 Why do richer training signals not help? DPO on matched preference pairs yields $+1.0$pp ($p = 0.163$)---preference learning fails because the problem is not what the student prefers to generate. Scaling from 3B to 7B SFT closes only ${\sim}12$--$14\%$ of the teacher--student gap (\S\ref{sec:capacity}), ruling out capacity as the primary bottleneck.
 
-We introduce a diagnostic protocol that distinguishes \emph{strategy acquisition} from \emph{execution capability}. The key causal test: providing oracle retrieval at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$), with truncation dropping from 83\% to 0\%. Even a simple BM25 retrieval system recovers $+6$--$12$pp. The protocol proceeds by elimination---collapse characterization and weight geometry analysis (\S\ref{sec:framework}), causal intervention (\S\ref{sec:distillation})---and localizes the failure before deployment (Figure~\ref{fig:framework}).
+We introduce a diagnostic protocol that distinguishes \emph{strategy acquisition} from \emph{execution capability}. The key causal test: providing oracle retrieval (referred to throughout as ``oracle'' for brevity; technically a \textit{teacher-retrieval replay}---we replay the teacher's actual retrieval output without any answer-key oracle) at inference recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$), with truncation dropping from 83\% to 0\%. Even a simple BM25 retrieval system recovers $+6$--$12$pp (within the teacher's training document pool). The protocol proceeds by elimination---collapse characterization and weight geometry analysis (\S\ref{sec:framework}), causal intervention (\S\ref{sec:distillation})---and localizes the failure before deployment (Figure~\ref{fig:framework}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{framework_overview.pdf}
-\caption{Overview of the \textsc{MemDistill} diagnostic framework. Phase~1 (top) progressively characterizes the distillation failure through collapse analysis, SVD weight geometry, and activation probing. Phase~2 (middle) tests interventions: DPO preference learning, truncation confound correction, and oracle retrieval. The combined evidence (bottom) attributes ${\sim}87\%$ of the teacher--student gap to behavioral mismatch.}
+\caption{Overview of the \textsc{MemDistill} diagnostic framework. Phase~1 (top) progressively characterizes the distillation failure through collapse analysis, SVD weight geometry, and activation probing. Phase~2 (middle) tests interventions: DPO preference learning, truncation confound correction, and oracle retrieval. The capacity bound (at most ${\sim}12$--$14\%$) and retrieval-quality recovery bound ($\geq 100\%$) are independent upper bounds, not a partition of the teacher--student gap.}
 \label{fig:framework}
 \end{figure}
 
 \paragraph{Contributions.}
 \begin{itemize}[leftmargin=*,nosep]
-    \item A \textbf{silent failure mode} in agentic SFT distillation: format-level indicators (tool-call syntax, balanced XML tags, query similarity) give high scores while task performance retains $<$6\% of teacher capability.
-    \item A \textbf{diagnostic protocol} (collapse characterization $\to$ weight geometry $\to$ causal intervention) that localizes the failure to execution-environment mismatch before pipeline deployment, applicable to any agentic distillation where the teacher's capability depends on tool execution.
-    \item \textbf{Causal evidence and quantification}: oracle retrieval $+47.3$pp ($p < 0.0001$); capacity accounts for ${\sim}12$--$14\%$ of the gap; behavioral mismatch accounts for ${\sim}86$--$88\%$; DPO is an informative negative (power $> 0.99$ at 5pp).
-    \item A \textbf{deployable mitigation}: BM25 retrieval recovers $+6$--$12$pp with no additional training, immediately deployable as a sidecar component.
+    \item \textbf{A silent failure mode in agentic SFT distillation}: format-level indicators (tool-call syntax 1.00, balanced XML 1.00, query Jaccard 0.95) give high scores while task performance retains <6\% of teacher capability at N=8.
+    \item A \textbf{diagnostic protocol} (collapse characterization $\to$ weight geometry $\to$ causal intervention) that localizes the failure to execution-environment mismatch before pipeline deployment. We propose and demonstrate on MEM1 a three-step elimination scheme (capacity $\to$ evaluation artefacts $\to$ causal intervention) for diagnosing silent-failure-shaped gaps.
+    \item \textbf{Causal evidence and quantification}: oracle retrieval $+47.3$pp ($p < 0.0001$); capacity upper-bounds the gap at ${\sim}12$--$14\%$, leaving the bulk bounded above by retrieval-quality recovery; DPO is an informative negative (power $> 0.99$ at 5pp).
+    \item A \textbf{deployable mitigation}: BM25 retrieval recovers $+6$--$12$pp with no additional training, immediately deployable as a sidecar component within the teacher's training document pool.
 \end{itemize}

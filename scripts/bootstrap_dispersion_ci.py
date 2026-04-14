@@ -17,7 +17,7 @@ Outputs:
 import json, os, re, sys
 import numpy as np
 
-N_BOOT = 1000
+N_BOOT = 10000
 RNG = np.random.default_rng(42)
 
 ACTION_TAG_RE = re.compile(r"<(think|search|information|answer)\b")

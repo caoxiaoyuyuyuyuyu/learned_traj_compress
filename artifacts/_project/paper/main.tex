@@ -12,6 +12,9 @@
 \usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage{url}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
 
 % === Metadata ===
 \title{MemDistill: Diagnosing Why Distilling RL Agent Memory Fails}
@@ -36,6 +39,17 @@
 \input{section3_distillation}
 \input{section4_related_work}
 \input{section5_conclusion}
+
+% === Ethics Statement (ACL requirement) ===
+\section*{Ethics Statement}
+
+\paragraph{Data.} All training data comes from FlashRAG (MIT license)~\cite{jin2025flashrag} and the MEM1 teacher trajectories (MIT license)~\cite{zhou2025mem1}. The underlying QA datasets (NQ, TriviaQA, HotpotQA, and FlashRAG's multi-hop mixture) contain no personally identifiable information beyond what is already public on Wikipedia.
+
+\paragraph{Computational cost and environmental impact.} Our experiments used approximately 50 GPU-hours on an NVIDIA RTX~PRO~6000 Blackwell (97\,GB, $\sim$600\,W TDP) single-node setup, distributed across Qwen2.5-3B / 7B / Llama-3.2-1B SFT, DPO, and evaluation runs (the 7B full-rank SFT and the Qwen-3B eval sweep dominate the budget). Using the carbon-estimation methodology of Strubell et al.\ (2019) with an average draw of $\sim$0.5\,kWh per GPU-hour and an estimated grid carbon intensity of $\sim$0.5\,kg\,CO$_2$/kWh, this corresponds to roughly $12$\,kg\,CO$_2$-equivalent. No experiments were rerun for cosmetic reasons; rerun counts are bounded by the registry entries summarised in Appendix~\ref{app:training} and~\ref{app:llama1b_hparams}.
+
+\paragraph{Misuse considerations.} Our diagnostic framework exposes that format-level metrics alone can mask complete task failure in agentic distillation. Deployed systems relying on tool-call format validators as safety filters may therefore be vulnerable to silent-failure modes in which the student produces syntactically well-formed tool calls that never reach a valid retrieval backend. We recommend content-level evaluation and end-to-end tool-execution ablations as complementary checks for any distilled agent.
+
+\paragraph{Bias and limitations.} Our evaluation is English-only and Wikipedia-centric, inheriting the coverage bias of the FlashRAG corpus. The silent-failure mode we document may manifest differently in multilingual, domain-specific, or non-retrieval agentic settings. All students are trained under a single hash-based train/test split; we did not vary the split seed (see \S\ref{sec:limitations}).
 
 % === References ===
 % \bibliographystyle{acl_natbib}  % already set by acl.sty

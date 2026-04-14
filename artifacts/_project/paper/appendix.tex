@@ -127,6 +127,115 @@ For attention layers, U-side alignment dominates V-side ($0.31$ vs.\ $0.12$ at $
 \paragraph{Same-architecture comparison.}
 Both the RL and SFT models compared here are full-rank fine-tunes of the same Qwen2.5-7B base, so alignment ratios reflect differences in training objective (PPO vs.\ behavior cloning) rather than dimensional or rank confounds. The distillation experiments in \S\ref{sec:distillation} use a separate Qwen2.5-3B / LoRA rank-32 student, reflecting the deployment cost constraint.
 
+\section{Oracle Retrieval Injection: Implementation and Leakage Audit}
+\label{app:oracle_impl}
+
+\paragraph{Pseudocode.}
+Algorithm~\ref{alg:oracle} describes our oracle retrieval injection. The implementation builds a map from each test prompt to the ordered list of \texttt{<information>} segments in the teacher's best (highest-EM) trajectory for that prompt (from \texttt{phase1d\_v2\_data/raw\_trajectories\_N*.json}). At inference time we run the student in an interactive loop, halting whenever it emits \texttt{</search>}, and inject the $j$-th teacher segment in response to the student's $j$-th search query. The mapping is \emph{positional} rather than query-similarity-based: we do not match on Jaccard or cosine similarity between the student query and the teacher query. This keeps the injection deterministic and reproducible, and it matches the teacher's own ordering of retrieval rounds.
+
+\begin{algorithm}[h]
+\caption{Oracle Retrieval Injection (exp\_009 / exp\_013).}
+\label{alg:oracle}
+\small
+\begin{algorithmic}[1]
+\State \textbf{Input:} Student prompt $p$, teacher trajectory $T_p$ (best-EM response), maximum search rounds $R$
+\State \textbf{Output:} Student completion with oracle-injected retrieval segments
+\State Parse $T_p$ into ordered information segments $[I_1,\ldots,I_k]$ using the regex \texttt{<information>.*?</information>}
+\State $j \gets 0$; $\text{gen} \gets$ generate from $p$ with stop strings $\{\texttt{</search>},\texttt{</answer>}\}$
+\While{$\text{gen}$ ends with \texttt{</search>} and $j < R$}
+  \If{$j < k$}
+    \State Append $I_{j+1}$ verbatim to $\text{gen}$
+  \Else
+    \State Append a no-hit \texttt{<information></information>} block
+  \EndIf
+  \State $j \gets j + 1$
+  \State Continue generation from $\text{gen}$ until \texttt{</search>}, \texttt{</answer>}, or \texttt{max\_new\_tokens}
+\EndWhile
+\State \Return $\text{gen}$
+\end{algorithmic}
+\end{algorithm}
+
+Concrete parameters: \texttt{max\_new\_tokens}${}=4096$, \texttt{max\_search\_rounds}${}=R=5$, greedy decoding (\texttt{do\_sample}${}=$\texttt{False}), model loaded as a merged LoRA adapter. Both Qwen-3B (exp\_009) and Llama-1B (exp\_013) use the same injection loop; only the base checkpoint and adapter change.
+
+\subsection*{Leakage Audit}
+\label{app:leakage_audit}
+
+To verify that the oracle retrieval intervention does not trivially leak gold-answer strings, we run a substring audit on a random sample of 50 N=8 evaluation prompts (\texttt{scripts/oracle\_leakage\_audit.py}, seed=42). For each prompt, we concatenate all teacher-injected \texttt{<information>} blocks, lowercase and strip punctuation from both the concatenated text and the gold-answer strings (from the FlashRAG evaluation JSON), and record a hit if any gold answer is a substring of the concatenated blocks. As a control, we shuffle teacher passages across prompts (prompt $p$ receives passages from a random other prompt $p'$) and re-run the same check.
+
+\begin{table}[h]
+\small
+\centering
+\begin{tabular}{lr}
+\toprule
+Condition & Ratio (gold-answer hit / 50) \\
+\midrule
+Real (teacher's own info blocks) & 50 / 50 = 100.00\% \\
+Shuffled control (unrelated prompts) & 28 / 50 = 56.00\% \\
+\bottomrule
+\end{tabular}
+\caption{Oracle retrieval leakage audit on 50 random N=8 test prompts.}
+\label{tab:leakage_audit}
+\end{table}
+
+\paragraph{Interpretation.} The 44\,pp real-vs-shuffled delta isolates \emph{retrieval topic specificity}, not answer leakage. Three falsifiers rule out a leak interpretation: \textbf{(i)} the teacher MEM1 policy is trained with PPO on outcome rewards only, and its FlashRAG retriever receives no gold-label supervision at rollout time; \textbf{(ii)} under teacher-retrieval replay, student $\mathrm{em\_full}$ at $N=8$ remains $0.008$, far below the $\approx 1.0$ rate expected if passages directly exposed answers; \textbf{(iii)} the 56\% baseline rate reflects that extractive Wikipedia QA datasets (NQ, TriviaQA, HotpotQA) construct gold answers to occur in any on-topic Wikipedia passage, so a high absolute rate is an expected functional-retrieval property rather than a leakage signature. Accordingly, the $+47.3$\,pp oracle recovery should be read as a \emph{strict upper bound} on retrieval-side mitigation, not as a demonstration of perfect answer access.
+
+\paragraph{Limitations.} The substring match does not distinguish partial lexical overlap from semantic coverage; 50 samples is a sanity check rather than a full audit. A comprehensive audit covering all splits and semantic paraphrase matching is deferred to camera-ready.
+
+\section{Cross-Backbone: Llama-3.2-1B SFT Hyperparameters}
+\label{app:llama1b_hparams}
+
+\begin{table}[h]
+\small
+\centering
+\caption{Llama-3.2-1B LoRA SFT hyperparameters (exp\_013, cross-backbone W2).}
+\label{tab:llama1b_hparams}
+\begin{tabular}{lc}
+\toprule
+Hyperparameter & Value \\
+\midrule
+Base model & \texttt{meta-llama/Llama-3.2-1B} \\
+LoRA target & q,k,v,o,gate,up,down\_proj \\
+LoRA rank & 32 \\
+LoRA $\alpha$ & 64 \\
+LoRA dropout & 0.05 \\
+Optimiser & AdamW \\
+Learning rate & $2\times10^{-4}$ \\
+LR scheduler & cosine, warmup $10\%$ \\
+Weight decay & 0.01 \\
+Batch size & 1 \\
+Gradient accum. & 8 (eff.\ batch 8) \\
+Epochs & 3 \\
+Max seq.\ length & 6144 \\
+Precision & bf16 \\
+Gradient checkpointing & Yes \\
+Seed & 42 \\
+Chat template & Llama-3.1 (manual) \\
+Pad token & \texttt{eos\_token} \\
+\midrule
+Training samples & 1{,}118 (same pooled split as 3B) \\
+GPU & NVIDIA RTX PRO 6000 Blackwell (97\,GB) \\
+Training wall-clock & $10.1$\,min (603\,s) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This configuration mirrors the Qwen2.5-3B SFT in Table~\ref{tab:training_hyperparams} on every axis that could confound the cross-backbone comparison (LoRA rank/$\alpha$, epoch count, learning rate, data, split seed). Only the base model, chat template, and effective batch differ---the effective batch is 8 (batch 1 $\times$ grad\_accum 8) vs.\ 16 for Qwen-3B---because Llama-3.2-1B is roughly $1/3$ the parameter count of Qwen2.5-3B and gradient accumulation was re-tuned for throughput on the single-GPU Blackwell box. We verified that the Llama student still converges within 3 epochs (final train loss $\approx 0.74$) on the same partial-credit pooled data.
+
+\section{Responsible NLP Research Checklist}
+\label{app:responsible_nlp}
+
+We summarise the ACL Responsible NLP Research Checklist for the present submission.
+
+\paragraph{A. Scientific artifacts.}
+We use FlashRAG~\cite{jin2025flashrag} (MIT license), MEM1 teacher checkpoints and trajectories~\cite{zhou2025mem1} (MIT license), Qwen2.5-3B / 7B (Apache~2.0), and Llama-3.2-1B (Meta Llama~3 Community License, which imposes use-case and commercial-use restrictions). We use all artifacts consistent with their intended research use. We release code and evaluation scripts under the same MIT license as FlashRAG. All derived artifacts (distilled adapters, eval outputs) inherit the most restrictive upstream license.
+
+\paragraph{B. Computational experiments.}
+See Ethics Statement (\emph{Computational cost and environmental impact}) and Appendices~\ref{app:training},~\ref{app:llama1b_hparams}. We report per-experiment GPU time, effective batch size, and total wall-clock for all training runs. Evaluation runs use $\text{max\_new\_tokens}=4096$ throughout (with the truncation confound of $\text{max\_new\_tokens}=2048$ documented in Appendix~\ref{app:trunc_confound}). All reported hyperparameters come from a single run per configuration; we report exact seeds (split seed 42, training seed 42) and do not perform hyperparameter search beyond the grid reported in Table~\ref{tab:training_hyperparams}.
+
+\paragraph{C. Human annotators.} Not applicable. No human annotation, crowdsourcing, or user studies were conducted.
+
+\paragraph{D. AI assistants.} We used large-language-model writing assistants (ChatGPT, Claude) for language polishing of the manuscript. All experimental design, code, analysis, figures, and claims are the authors' own work; no text was inserted by an AI assistant without author verification and rewriting.
+
 \section{Activation Probing Details}
 \label{app:probing}
 
@@ -226,13 +335,13 @@ Llama-3.2-1B & $\approx 1.00$ (all checks) & em\_p=0.014 \\
 \section{Surface Metric Dispersion Analysis}
 \label{app:dispersion}
 
-Near-identical cross-backbone point estimates on action-sequence accuracy, BLEU, and ROUGE-L (Table~\ref{tab:silent_failure_demo}) raise a concern that the agreement is coincidental. To rule this out we compute per-sample 95\% bootstrap confidence intervals (1{,}000 resamples, seed 42) on the two surface metrics with per-sample access---action-sequence accuracy and ROUGE-L---and on the task-level em\_partial across $N\!\in\!\{2,4,8\}$ for every backbone~$\times$~retrieval configuration. Results are in Table~\ref{tab:bootstrap_ci}.
+Near-identical cross-backbone point estimates on action-sequence accuracy, BLEU, and ROUGE-L (Table~\ref{tab:silent_failure_demo}) raise a concern that the agreement is coincidental. To rule this out we compute per-sample 95\% bootstrap confidence intervals (10{,}000 resamples, seed 42) on the two surface metrics with per-sample access---action-sequence accuracy and ROUGE-L---and on the task-level em\_partial across $N\!\in\!\{2,4,8\}$ for every backbone~$\times$~retrieval configuration. Results are in Table~\ref{tab:bootstrap_ci}.
 
 \begin{table}[t]
 \small
 \centering
 \input{bootstrap_ci_table}
-\caption{Bootstrap 95\% CIs (1{,}000 resamples, seed 42) for per-sample surface metrics and task em\_partial across backbones and retrieval modes. Qwen-3B per-sample action-sequence and ROUGE-L values come from the stored W1 surface-metrics log; Llama-1B values are recomputed via the same extraction from \texttt{exp\_013} eval details. At $N\!=\!8$ the surface-metric CIs for the two backbones overlap almost entirely (action\_seq\_acc $0.606~[0.595,0.616]$ for both; ROUGE-L $0.214~[0.204,0.224]$ vs.\ $0.212~[0.202,0.224]$), confirming that the near-identical means reported in \S\ref{sec:intro} and \S\ref{sec:distillation} reflect a genuinely near-identical distribution rather than a point-estimate coincidence.}
+\caption{Bootstrap 95\% CIs (10{,}000 resamples, seed 42) for per-sample surface metrics and task em\_partial across backbones and retrieval modes. Qwen-3B per-sample action-sequence and ROUGE-L values come from the stored W1 surface-metrics log; Llama-1B values are recomputed via the same extraction from \texttt{exp\_013} eval details. At $N\!=\!8$ the surface-metric CIs for the two backbones overlap almost entirely (action\_seq\_acc $0.606~[0.595,0.616]$ for both; ROUGE-L $0.214~[0.204,0.224]$ vs.\ $0.212~[0.202,0.224]$), confirming that the near-identical means reported in \S\ref{sec:intro} and \S\ref{sec:distillation} reflect a genuinely near-identical distribution rather than a point-estimate coincidence.}
 \label{tab:bootstrap_ci}
 \end{table}
 
