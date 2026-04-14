@@ -1,0 +1,44 @@
+{
+  "qwen_stats": {
+    "n": 125,
+    "mean": 0.6058,
+    "std": 0.06,
+    "median": 0.6,
+    "mode": 0.6
+  },
+  "llama_stats": {
+    "n": 125,
+    "mean": 0.6058,
+    "std": 0.06,
+    "median": 0.6,
+    "mode": 0.6
+  },
+  "contingency": {
+    "both_above_0.5": 122,
+    "qwen_only_above_0.5": 0,
+    "llama_only_above_0.5": 0,
+    "neither_above_0.5": 3
+  },
+  "agreement_rate": 1.0,
+  "cohen_kappa": 1.0,
+  "exact_per_sample_match_count": 125,
+  "exact_per_sample_match_rate": 1.0,
+  "qwen_value_distribution": {
+    "0.2727": 1,
+    "0.375": 1,
+    "0.4286": 1,
+    "0.5": 2,
+    "0.6": 109,
+    "0.75": 11
+  },
+  "llama_value_distribution": {
+    "0.2727": 1,
+    "0.375": 1,
+    "0.4286": 1,
+    "0.5": 2,
+    "0.6": 109,
+    "0.75": 11
+  },
+  "forensic_verdict": "degenerate_pipeline",
+  "verdict_rationale": "Both backbones produce the identical 3-token action sequence [think, search, information] on all 125 samples. Per-sample scores are 100% identical (125/125 exact match). The variation in scores (0.6, 0.75, 0.5, etc.) derives entirely from teacher sequence length variation, not from any student-side difference. Cohen kappa = 1.0. R1's concern about scoring pipeline degeneracy is confirmed."
+}

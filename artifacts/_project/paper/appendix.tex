@@ -342,8 +342,43 @@ Near-identical cross-backbone point estimates on action-sequence accuracy, BLEU,
 \small
 \centering
 \input{bootstrap_ci_table}
-\caption{Bootstrap 95\% CIs (10{,}000 resamples, seed 42) for per-sample surface metrics and task em\_partial across backbones and retrieval modes. Qwen-3B per-sample action-sequence and ROUGE-L values come from the stored W1 surface-metrics log; Llama-1B values are recomputed via the same extraction from \texttt{exp\_013} eval details. At $N\!=\!8$ the surface-metric CIs for the two backbones overlap almost entirely (action\_seq\_acc $0.606~[0.595,0.616]$ for both; ROUGE-L $0.214~[0.204,0.224]$ vs.\ $0.212~[0.202,0.224]$), confirming that the near-identical means reported in \S\ref{sec:intro} and \S\ref{sec:distillation} reflect a genuinely near-identical distribution rather than a point-estimate coincidence.}
+\caption{Bootstrap 95\% CIs (10{,}000 resamples, seed 42) for per-sample surface metrics and task em\_partial across backbones and retrieval modes. Qwen-3B per-sample action-sequence and ROUGE-L values come from the stored W1 surface-metrics log; Llama-1B values are recomputed via the same extraction from \texttt{exp\_013} eval details. At $N\!=\!8$ the CIs overlap (ROUGE-L $0.214~[0.204,0.224]$ vs.\ $0.212~[0.202,0.224]$). The action\_seq\_acc CIs are trivially identical ($0.606~[0.595,0.616]$ for both) because the per-sample scores are themselves identical---a structural degeneracy, not a coincidence (see Appendix~\ref{app:asa_forensics}).}
 \label{tab:bootstrap_ci}
 \end{table}
 
-The overlap has a mechanistic explanation: (i)~action-sequence accuracy is dominated by a shared initial ``search'' action prefix that both students emit deterministically, producing discrete mass at identical values; (ii)~BLEU (corpus-level, not bootstrapped here) sits near the floor for both students on sacrebleu's 0--100 scale (1.14 Qwen, 1.16 Llama), small relative to the teacher's 0.455 em\_partial signal; (iii)~ROUGE-L at $\approx 0.21$ reflects shared tool-call markup tokens rather than substantive content overlap. The consistency is therefore a property of the silent-failure regime, and does not affect any inference in the main text (all causal claims rest on the oracle-recovery contrast in \S\ref{sec:distillation}, not on surface-metric equality). The same bootstrap sweep also quantifies em\_partial dispersion for every cell of the cross-backbone table: Llama-1B oracle retrieval lifts em\_partial to $0.351~[0.318,0.384]$ at $N\!=\!8$ (vs.\ $0.014~[0.005,0.025]$ no-API), non-overlapping CIs that anchor the $+33.7$pp oracle-recovery claim.
+The overlap has a mechanistic explanation: (i)~action-sequence accuracy is dominated by a shared initial ``search'' action prefix that both students emit deterministically, producing discrete mass at identical values (see Appendix~\ref{app:asa_forensics} for per-sample forensics confirming this is structurally degenerate, not a genuine coincidence); (ii)~BLEU (corpus-level, not bootstrapped here) sits near the floor for both students on sacrebleu's 0--100 scale (1.14 Qwen, 1.16 Llama), small relative to the teacher's 0.455 em\_partial signal; (iii)~ROUGE-L at $\approx 0.21$ reflects shared tool-call markup tokens rather than substantive content overlap. The consistency is therefore a property of the silent-failure regime, and does not affect any inference in the main text (all causal claims rest on the oracle-recovery contrast in \S\ref{sec:distillation}, not on surface-metric equality). The same bootstrap sweep also quantifies em\_partial dispersion for every cell of the cross-backbone table: Llama-1B oracle retrieval lifts em\_partial to $0.351~[0.318,0.384]$ at $N\!=\!8$ (vs.\ $0.014~[0.005,0.025]$ no-API), non-overlapping CIs that anchor the $+33.7$pp oracle-recovery claim.
+
+\section{Action-Sequence Accuracy: Per-Sample Forensics}
+\label{app:asa_forensics}
+
+A reviewer raised the concern that the near-identical action-sequence accuracy (ASA $=0.606$) for both Qwen-3B and Llama-1B at $N\!=\!8$ may reflect scoring-pipeline degeneracy rather than a genuine diagnostic signal. We investigate this with a per-sample forensic analysis.
+
+\paragraph{Method.} We extract the per-sample ASA scores for both backbones (125 matched $N\!=\!8$ test prompts) by applying Eq.~\ref{eq:asa} to student--teacher action-tag sequence pairs. We then compute: (i)~per-sample exact match rate between the two backbone score vectors; (ii)~a $2\!\times\!2$ contingency table (binarised at $\text{ASA}\!\geq\!0.5$); (iii)~Cohen's $\kappa$.
+
+\paragraph{Results.} The two per-sample score vectors are \textbf{identical}: 125/125 exact match (100\%), $\kappa\!=\!1.0$. The mechanism is simple: both students emit the same 3-token action prefix $\langle\texttt{think},\texttt{search},\texttt{information}\rangle$ on every sample (no variation across 125 prompts for either backbone). The teacher's action sequences vary in length ($n\!=\!4$: 8 samples; $n\!=\!5$: 106 samples; other lengths: 11 samples), producing the observed score distribution: 109 samples at $3/5\!=\!0.6$, 11 at $3/4\!=\!0.75$, and 5 outliers where longer teacher sequences yield lower scores (Table~\ref{tab:asa_contingency}, Figure~\ref{fig:asa_overlay}).
+
+\begin{table}[h]
+\small
+\centering
+\begin{tabular}{lcc|c}
+\toprule
+& Llama $\geq 0.5$ & Llama $< 0.5$ & Total \\
+\midrule
+Qwen $\geq 0.5$ & 122 & 0 & 122 \\
+Qwen $< 0.5$    & 0   & 3 & 3 \\
+\midrule
+Total            & 122 & 3 & 125 \\
+\bottomrule
+\end{tabular}
+\caption{Contingency table for per-sample ASA (binarised at 0.5). Agreement rate $=1.0$, Cohen's $\kappa = 1.0$. The perfect agreement confirms that all variation is teacher-side, not student-side.}
+\label{tab:asa_contingency}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{overlay_n8_asa_hist.pdf}
+\caption{Per-sample action-sequence accuracy histograms for Qwen-3B and Llama-1B at $N\!=\!8$. The distributions are identical (125/125 exact per-sample match). Both students produce the same 3-token action prefix; all variation derives from teacher sequence length.}
+\label{fig:asa_overlay}
+\end{figure}
+
+\paragraph{Verdict.} The ASA metric is \textbf{structurally degenerate} in the no-API setting: it collapses to $3/n_\text{teacher}$ for any student that has learned the initial action prefix, regardless of backbone identity or capacity. The near-identical 0.606 point estimates are therefore a metric artefact, not an independently informative diagnostic signal. This confirms the reviewer's concern. We retain ASA in the paper for completeness but no longer treat the cross-backbone coincidence as evidence of a shared ``silent-failure signature.'' All causal claims in the main text rest on the oracle-recovery contrast (\S\ref{sec:causal}) and em\_partial task metrics, not on ASA equality.
