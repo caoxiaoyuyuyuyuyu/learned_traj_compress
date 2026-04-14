@@ -2,7 +2,7 @@
 \label{sec:related}
 
 \paragraph{RL-trained LLM agents.}
-RL fine-tuning endows LLMs with procedural capabilities SFT does not produce~\cite{zhou2025mem1,zhou2024webarena,liu2024agentbench,yao2023react,zeng2024agenttuning}. We investigate why these RL-acquired strategies resist distillation.
+RL fine-tuning endows LLMs with procedural capabilities SFT does not produce~\cite{zhou2025mem1,zhou2024webarena,liu2024agentbench,yao2023react,zeng2024agenttuning}. Early memory-augmented deep-RL architectures such as the Neural Map~\cite{parisotto2018neuralmap} first framed structured agent memory as a learnable retrieval surface, foreshadowing the retrieval-execution decomposition we isolate empirically in the LLM-agent setting. We investigate why these RL-acquired strategies resist distillation.
 
 \paragraph{Knowledge distillation for LLMs.}
 Standard methods~\cite{hsieh2023distilling,gu2024minillm,jiang2023lion} target single-turn transfer; policy distillation and imitation learning~\cite{rusu2016policy,czarnecki2019distilling,ross2011dagger} handle procedural knowledge in low-dimensional action spaces. Our setting differs: the teacher's competence arises from a \emph{multi-turn procedural policy} in the high-dimensional token space of LLMs.
