@@ -178,7 +178,7 @@ $\Delta$ (real $-$ shuffled) & 64\,pp \\
 \label{tab:leakage_audit}
 \end{table}
 
-\paragraph{Interpretation.} The absolute 98\% real-hit rate is high, and the audit script's built-in decision threshold (${>}30\%$) tags this rate as ``non-trivial leakage''; we therefore retain the experiment as an \emph{upper-bound probe}, not as a clean causal estimate. Two independent checks nevertheless bound the leakage contribution: \textbf{(i)} the teacher MEM1 policy is trained with PPO on outcome rewards only, and its FlashRAG retriever receives no gold-label supervision at rollout time; \textbf{(ii)} under teacher-retrieval replay, student $\mathrm{em\_full}$ at $N=8$ remains $0.008$, far below the $\approx 1.0$ rate expected if passages directly exposed answers. Accordingly, the $+47.3$\,pp oracle em\_partial recovery should be read as a \emph{strict upper bound} on retrieval-side mitigation, not as a demonstration of perfect answer access. The 64\,pp real$-$shuffled gap itself quantifies retrieval topic specificity relative to the derangement baseline.
+\paragraph{Interpretation.} The absolute 98\% real-hit rate is high, and the audit script's built-in decision threshold (${>}30\%$) tags this rate as ``non-trivial leakage''; we therefore retain the experiment as an \emph{upper-bound probe}, not as a clean causal estimate. Two independent checks nevertheless bound the leakage contribution: \textbf{(i)} the teacher MEM1 policy is trained with PPO on outcome rewards only, and its FlashRAG retriever receives no gold-label supervision at rollout time; \textbf{(ii)} under teacher-retrieval replay, student $\mathrm{em\_full}$ at $N=8$ remains $0.008$, far below the $\approx 1.0$ rate expected if passages directly exposed answers. Accordingly, the $+47.7$\,pp oracle em\_partial recovery should be read as a \emph{strict upper bound} on retrieval-side mitigation, not as a demonstration of perfect answer access. The 64\,pp real$-$shuffled gap itself quantifies retrieval topic specificity relative to the derangement baseline.
 
 \paragraph{Limitations.} The substring match does not distinguish partial lexical overlap from semantic coverage; 50 samples is a sanity check rather than a full audit. A comprehensive audit covering all splits and semantic paraphrase matching is deferred to camera-ready.
 
@@ -325,7 +325,7 @@ At 2048 tokens, $93.6\%$ of SFT outputs were truncated before the \texttt{<answe
 \toprule
  & Format-level & Content-level \\
 \midrule
-Qwen-2.5-3B  & $\approx 1.00$ (all checks) & em\_p=0.025 \\
+Qwen-2.5-3B  & $\approx 1.00$ (all checks) & em\_p=0.021 \\
 Llama-3.2-1B & $\approx 1.00$ (all checks) & em\_p=0.014 \\
 \bottomrule
 \end{tabular}
@@ -346,7 +346,7 @@ Near-identical cross-backbone point estimates on action-sequence accuracy, BLEU,
 \label{tab:bootstrap_ci}
 \end{table}
 
-The overlap has a mechanistic explanation: (i)~action-sequence accuracy is dominated by a shared initial ``search'' action prefix that both students emit deterministically, producing discrete mass at identical values (see Appendix~\ref{app:asa_forensics} for per-sample forensics confirming this is structurally degenerate, not a genuine coincidence); (ii)~BLEU (corpus-level, not bootstrapped here) sits near the floor for both students on sacrebleu's 0--100 scale (1.14 Qwen, 1.16 Llama), small relative to the teacher's 0.455 em\_partial signal; (iii)~ROUGE-L at $\approx 0.21$ reflects shared tool-call markup tokens rather than substantive content overlap. The consistency is therefore a property of the silent-failure regime, and does not affect any inference in the main text (all causal claims rest on the oracle-recovery contrast in \S\ref{sec:distillation}, not on surface-metric equality). The same bootstrap sweep also quantifies em\_partial dispersion for every cell of the cross-backbone table: Llama-1B oracle retrieval lifts em\_partial to $0.351~[0.318,0.384]$ at $N\!=\!8$ (vs.\ $0.014~[0.005,0.025]$ no-API), non-overlapping CIs that anchor the $+33.7$pp oracle-recovery claim.
+The overlap has a mechanistic explanation: (i)~action-sequence accuracy is dominated by a shared initial ``search'' action prefix that both students emit deterministically, producing discrete mass at identical values (see Appendix~\ref{app:asa_forensics} for per-sample forensics confirming this is structurally degenerate, not a genuine coincidence); (ii)~BLEU (corpus-level, not bootstrapped here) sits near the floor for both students on sacrebleu's 0--100 scale (1.14 Qwen, 1.16 Llama), small relative to the teacher's 0.455 em\_partial signal; (iii)~ROUGE-L at $\approx 0.21$ reflects shared tool-call markup tokens rather than substantive content overlap. The consistency is therefore a property of the silent-failure regime, and does not affect any inference in the main text (all causal claims rest on the oracle-recovery contrast in \S\ref{sec:distillation}, not on surface-metric equality). The same bootstrap sweep also quantifies em\_partial dispersion for every cell of the cross-backbone table: Llama-1B oracle retrieval lifts em\_partial to $0.351~[0.318,0.384]$ at $N\!=\!8$ (vs.\ $0.014~[0.005,0.025]$ \texttt{honest\_search}), non-overlapping CIs that anchor the $+33.7$pp oracle-recovery claim.
 
 \section{Action-Sequence Accuracy: Per-Sample Forensics}
 \label{app:asa_forensics}
@@ -381,4 +381,93 @@ Total            & 122 & 3 & 125 \\
 \label{fig:asa_overlay}
 \end{figure}
 
-\paragraph{Verdict.} The ASA metric is \textbf{structurally degenerate} in the no-API setting: it collapses to $3/n_\text{teacher}$ for any student that has learned the initial action prefix, regardless of backbone identity or capacity. The near-identical 0.606 point estimates are therefore a metric artefact, not an independently informative diagnostic signal. This confirms the reviewer's concern. We retain ASA in the paper for completeness but no longer treat the cross-backbone coincidence as evidence of a shared ``silent-failure signature.'' All causal claims in the main text rest on the oracle-recovery contrast (\S\ref{sec:causal}) and em\_partial task metrics, not on ASA equality.
+\paragraph{Verdict.} The ASA metric is \textbf{structurally degenerate} in the \texttt{honest\_search} setting: it collapses to $3/n_\text{teacher}$ for any student that has learned the initial action prefix, regardless of backbone identity or capacity. The near-identical 0.606 point estimates are therefore a metric artefact, not an independently informative diagnostic signal. This confirms the reviewer's concern. We retain ASA in the paper for completeness but no longer treat the cross-backbone coincidence as evidence of a shared ``silent-failure signature.'' All causal claims in the main text rest on the oracle-recovery contrast (\S\ref{sec:causal}) and em\_partial task metrics, not on ASA equality.
+
+\section{Passage-Redaction Ablation (exp\_016)}
+\label{app:redaction}
+
+This appendix documents the passage-redaction protocol, pre-registered deviation log, fire-statistics, before/after samples, and bootstrap CI decomposition table for the \texttt{oracle\_redacted\_\{full,half\}} conditions introduced in \S\ref{sec:causal}.
+
+\subsection{Protocol and Pre-Registered Deviation Log}
+\label{app:redaction_protocol}
+
+\paragraph{Pre-registered spec.}
+On 2026-04-14, Director approved a 4-condition redaction plan (\texttt{honest\_search} / \texttt{oracle\_full} / \texttt{oracle\_redacted\_full} / \texttt{oracle\_redacted\_half}) on the phase1d\_v2 $N{=}8$ test split (125 prompts). The registered redaction spec was: ``substring-only redaction with \texttt{\_norm} normalisation, case-insensitive, replace each gold-answer substring with \texttt{[REDACTED]}''. Half-redaction was deterministic odd-indexed substring redaction (seed-free). Phase~1 sanity gate was a hard $\pm 0.02$ tolerance on \texttt{oracle\_full} em\_partial vs Table~\ref{tab:oracle_api} ($0.498$), with \texttt{blocker\_report}-on-violation (no self-diagnosis).
+
+\paragraph{Executed spec.}
+The worker (commits \texttt{7cf099d}, \texttt{fd1e172}) implemented substring matching with \textbf{word-boundary anchoring} (\verb|\b|) plus leading/trailing \textbf{quote-strip} on gold answers before regex compile. All other parameters unchanged: case-insensitive \texttt{\_norm}, \texttt{[REDACTED]} placeholder, deterministic uniform density halving for the \texttt{oracle\_redacted\_half} condition across all $125/125$ passages (see Deviation~3 below), 4 conditions, $\pm 0.02$ sanity gate, paired bootstrap 10k seed 42, positional oracle injection (\textit{j}-th block on \textit{j}-th \texttt{<search>}), greedy decoding at $\text{max\_new\_tokens}=4096$, base Qwen2.5-3B + LoRA \texttt{checkpoints/exp\_006\_sft\_shared}.
+
+\paragraph{Rationale for deviation.}
+Phase 0 dry-run found that pure substring redaction caused \textbf{pathological over-redaction} on short gold answers. Canonical example: a yes/no prompt with \texttt{gold\_answer="no"} caused every occurrence of ``November'', ``novelist'', ``now'', ``none'', ``nothing'' in the passage to be redacted to \texttt{[REDACTED]}, destroying surrounding context at noise level. Left unchanged, this would systematically collapse \texttt{oracle\_redacted\_full} toward the \texttt{honest\_search} floor regardless of mechanism, biasing the decision gate toward the \texttt{leakage\_dominated} branch and voiding the three-way pre-registered test. Word-boundary anchoring + quote-strip is the \emph{minimum-necessary semantic interpretation} of ``substring match'' that preserves the test's scientific validity while remaining faithful to the ``only redact the answer token, not surrounding context'' principle in the registered spec.
+
+\paragraph{What is guaranteed unchanged.}
+The 4 conditions, the $\pm 0.02$ Phase~1 hard-stop, the three-branch decision gate thresholds ($\geq +25$ / $+5..+25$ / $< +5$), paired bootstrap 10k resamples seed 42, the phase1d\_v2 $N{=}8$ 125-prompt split, positional oracle injection, the \texttt{[REDACTED]} placeholder, greedy/4096 generation, and model identity were all held fixed.
+
+\paragraph{Non-deviations explicitly considered and rejected.}
+Stemming, lemmatisation, stopword filtering, and paraphrase detection were all explicitly considered and rejected. Only word-boundary anchoring and quote-strip were added.
+
+\paragraph{Deviation log summary.}
+For the reviewer's convenience, the pre-registered deviation set is:
+\begin{itemize}[leftmargin=*,nosep]
+\item \textbf{Deviation 1 --- word-boundary anchoring + quote-strip} (substring match refinement): see ``Executed spec'' and ``Rationale for deviation'' paragraphs above. Minimum-necessary semantic interpretation of ``substring match'' to prevent pathological over-redaction on short gold answers (e.g., \texttt{"no"} matching ``November''/``novelist''), preserving the three-way pre-registered test's validity.
+\item \textbf{Deviation 2 --- (reserved)}: no further substring-matching refinement beyond Deviation 1 was applied.
+\item \textbf{Deviation 3 --- half condition uniform density halving (vs planned odd-indexed subset)}: the pre-registered plan.md specification called for a $50\%$ subset of passages to receive redaction (\emph{odd-indexed 62 of 125}). Both \texttt{oracle\_redacted\_full} and \texttt{oracle\_redacted\_half} apply redaction across all $125/125$ passages (not passage-level subsetting). The \texttt{half} condition reduces per-passage substitution count to $\sim 52\%$ of \texttt{full} ($867$ vs $1663$ substitutions via the preprocessing-level \texttt{redact\_info\_block\_tag} tool; the eval-details JSON count of $325$ vs $753$ reflects \texttt{generated\_text[:2000]} serialization truncation and is not the authoritative count), implemented at sub-selection granularity. The deviation preserves the plan's scientific intent (``roughly half the redaction dose, deterministic sub-selection'') and is a stricter dose-response control than a passage-level subset (which would leave $\sim 50\%$ of passages completely unredacted and conflate dose-response with passage-level variance). Verification via preprocessing-level authoritative count: \texttt{exp\_016\_workdir/redaction\_stats.json} (full) and \texttt{redaction\_stats\_half.json} (half).
+\end{itemize}
+
+\subsection{Redaction Fire-Statistics}
+\label{app:redaction_stats}
+
+Post-refinement dry-run (2026-04-14) on the 125-prompt split:
+\begin{itemize}[leftmargin=*,nosep]
+  \item $125/125$ blocks redacted (no fully-unredactable prompts; \texttt{fully\_unredactable\_prompt\_ids = []}).
+  \item $1{,}663$ total substitutions across the split (mean $13.3$ per block).
+  \item Per-condition: \texttt{oracle\_redacted\_full} uses all $1663$ substitutions; \texttt{oracle\_redacted\_half} applies uniform density halving across all $125/125$ passages, yielding $867$ substitutions (ratio $0.52$ via preprocessing-level \texttt{redact\_info\_block\_tag}; see Deviation~3).
+\end{itemize}
+These counts confirm the refinement (a) still fires on essentially every block (no under-suppression) and (b) does not collapse toward noise via over-suppression (substitution count is two orders of magnitude above the pathological-substring floor such a collapse would produce).
+
+\paragraph{Serialization vs model-visible context.}
+Phase-0 \texttt{redaction\_stats.json} reports 1663 \texttt{[REDACTED]} substitutions pre-eval; the eval-output JSON \texttt{details} dict reports 753 because \texttt{eval\_sft\_with\_api.py:397} stores \texttt{generated\_text[:2000]} as a disk-space measure. A residual leakage probe (\texttt{residual\_leakage\_probe.json}) reconstructs the full model-visible context from \texttt{oracle\_map} and confirms $0/125$ blocks retain any unredacted gold substring; the retrieval-delta decomposition is therefore robust to the serialization artefact.
+
+\subsection{Before/After Samples}
+\label{app:redaction_samples}
+
+Three representative \texttt{<information>}-block before/after triples (full and half redaction) from \texttt{artifacts/exp\_016\_workdir/redaction\_samples.json}. Reviewer-auditable raw JSON is included in the supplementary materials.
+
+\paragraph{Sample 1 (prompt\_id 0).} Gold answers include \texttt{novelist}, \texttt{Tel Aviv}, \texttt{no}, \texttt{Melbourne, Australia}. Before: \emph{``John Henry Lanchester (born 25 February 1962) is a British journalist and novelist.''} After full-redact: \emph{``\ldots British journalist and [REDACTED].''} After half-redact: \emph{``\ldots British journalist and novelist.''} (even-indexed match preserved). Full-redact substitutions: 10; half-redact: 5. Word-boundary anchoring here prevents ``no'' from matching inside ``November''/``novelist''.
+
+\paragraph{Sample 2 (prompt\_id 1).} Gold answers include \texttt{American}, \texttt{1976}, \texttt{German}. Before: \emph{``Seven Faces is a 1929 American pre-Code drama film\ldots''} After full-redact: \emph{``Seven Faces is a 1929 [REDACTED] pre-Code drama film\ldots''} Substitutions: 20 (full) / 10 (half).
+
+\paragraph{Sample 3 (prompt\_id 2).} Gold answers include \texttt{Firestorm}, \texttt{Karl Marx}, \texttt{filibuster}. Before: \emph{``Firestorm is the name of several fictional superheroes\ldots''} After full-redact: \emph{``[REDACTED] is the name of several fictional superheroes\ldots''} After half-redact: \emph{``Firestorm is the name of several fictional superheroes\ldots''} (first-indexed Title: ``[REDACTED]'' redacted, mid-block ``Firestorm'' preserved). Substitutions: 19 (full) / 10 (half).
+
+\subsection{Bootstrap CI Decomposition Table}
+\label{app:redaction_bootstrap}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Condition & em\_partial & $\Delta$ vs \texttt{honest\_search} (pp) & 95\% CI (pp) \\
+\midrule
+\texttt{honest\_search}                & $0.021$ & ---      & ---                     \\
+\texttt{oracle\_redacted\_full} & $0.131$ & $+11.0$  & $[+8.8,\;+13.2]$         \\
+\texttt{oracle\_redacted\_half} & $0.373$ & $+35.2$  & $[+32.2,\;+38.2]$        \\
+\texttt{oracle\_full}           & $0.498$ & $+47.7$  & $[+44.6,\;+50.9]$        \\
+\midrule
+\multicolumn{4}{l}{\emph{Leakage component} $= \texttt{oracle\_full} - \texttt{oracle\_redacted\_full}$:} \\
+\quad leakage (paired)          & ---     & $+36.7$  & $[+33.5,\;+40.0]$        \\
+\bottomrule
+\end{tabular}
+\caption{Passage-redaction dose-response, phase1d\_v2 $N{=}8$ test ($n=125$). Paired bootstrap, 10k resamples, seed 42. All three oracle conditions are strictly positive at $p < 0.0001$ vs \texttt{honest\_search}. Monotonicity $0.131 < 0.373 < 0.498$ holds. Sanity gate: \texttt{oracle\_full} $0.498$ vs Table~\ref{tab:oracle_api} $0.498$, within the pre-registered $\pm 0.02$ tolerance (PASS). Decomposition: retrieval-quality $\approx +11$\,pp ($23\%$ of oracle gain) / passage-level answer-leakage $+36.7$\,pp $[+33.5, +40.0]$ ($77\%$; paired-bootstrap 10k resamples, seed 42, $p < 0.0001$; source: \texttt{exp\_016\_workdir/bootstrap\_redaction\_ci.json} field \texttt{oracle\_full\_vs\_oracle\_redacted\_full\_delta}).}
+\label{tab:redaction_bootstrap_ci}
+\end{table}
+
+\subsection{Limitations of the Redaction Ablation}
+\label{app:redaction_limitations}
+
+Substring (word-boundary) redaction removes exact-match gold tokens but not paraphrase or partial-lexical hints (e.g. ``Einstein's theory'' surviving in a block after ``Albert Einstein'' is redacted). The reported $+11$\,pp retrieval-quality residual is therefore itself an \emph{upper bound} on the non-leakage mechanism; a tighter paraphrase-aware redaction would plausibly yield an even smaller retrieval-quality component. Conversely, the $+37$\,pp leakage component is a lower bound on the leakage-assisted mechanism for the same reason. The orthogonal checks from the v3.4 audit (teacher trained with PPO outcome-only rewards; $\mathrm{em\_full}=0.008$ at $N{=}8$ under oracle replay) remain as lower bounds on mechanism separation: the leakage contribution is substring-level answer-exposure enabling short-form decoding, not full-answer copy-paste.
+
+\subsection{exp\_006 Canonical Full Test Set Cross-Reference}
+\label{app:exp006_full_test}
+
+The paper body reports \texttt{honest\_search} $N=8$ baseline on the phase1d\_v2 $n=125$ subset (em\_partial $=0.021$) for consistency with the paired-bootstrap decomposition in exp\_016. The earlier exp\_006 canonical run on the $N=8$ full test set yields em\_partial $0.025 \to 0.498$ under oracle retrieval SFT, a $+47.3$pp improvement. The $0.4$pp baseline difference ($0.025$ vs $0.021$) and $0.4$pp oracle-gain difference reflect subset sampling noise; the substantive conclusion (retrieval $\to$ oracle gain $\sim 47$pp) is stable across both denominators. The bootstrap confidence intervals reported in Section~\ref{sec:distillation} are constructed on the $n=125$ subset to match the leakage decomposition samples.

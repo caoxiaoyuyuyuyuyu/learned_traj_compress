@@ -23,7 +23,7 @@ Let $\mathbf{s}=(s_1,\dots,s_m)$ and $\mathbf{t}=(t_1,\dots,t_n)$ denote the ord
 \mathbf{1}[m=0] & n=0.
 \end{cases}
 \end{equation}
-The denominator is the \emph{teacher} sequence length, so a student that emits a correct prefix but fewer actions is penalised proportionally. In the no-API setting both students deterministically emit the 3-token prefix $\langle\texttt{think},\texttt{search},\texttt{information}\rangle$ on every sample; the resulting score therefore reduces to $3/n$ and is driven entirely by teacher sequence length, not by student-side variation (per-sample forensics in Appendix~\ref{app:asa_forensics}).
+The denominator is the \emph{teacher} sequence length, so a student that emits a correct prefix but fewer actions is penalised proportionally. In the \texttt{honest\_search} setting both students deterministically emit the 3-token prefix $\langle\texttt{think},\texttt{search},\texttt{information}\rangle$ on every sample; the resulting score therefore reduces to $3/n$ and is driven entirely by teacher sequence length, not by student-side variation (per-sample forensics in Appendix~\ref{app:asa_forensics}).
 
 %--------------------------------------------------------------
 \subsection{DPO and Capacity Ablations}
@@ -33,7 +33,7 @@ We also evaluate DPO on matched preference pairs as a stronger-than-SFT baseline
 
 \paragraph{Capacity isolation.}
 \label{sec:capacity}
-A 7B full-rank pooled SFT (same data/inclusion as the 3B LoRA student) consistently outperforms the 3B student ($0.171$/$0.147$/$0.079$ vs.\ $0.112$/$0.084$/$0.025$ at $N\!=\!2$/$4$/$8$). Defining the capacity contribution as $({\text{em}_{7\text{B}} - \text{em}_{3\text{B}}}) / ({\text{em}_{\text{teacher}} - \text{em}_{3\text{B}}})$, the 7B--3B gap accounts for \emph{at most} $12.3$/$13.8$/$12.6\%$ of the teacher--student gap---a stable $\approx$12--14\% upper bound (the 7B uses full-rank fine-tuning, more expressive than rank-32 LoRA, so the training-method advantage is conflated in). This is an upper bound on capacity alone; the remainder of the gap is bounded above by retrieval-quality recovery (\S\ref{sec:causal}), which is a second, independent upper bound.
+A 7B full-rank pooled SFT (same data/inclusion as the 3B LoRA student) consistently outperforms the 3B student ($0.171$/$0.147$/$0.079$ vs.\ $0.112$/$0.084$/$0.025$ at $N\!=\!2$/$4$/$8$). Defining the capacity contribution as $({\text{em}_{7\text{B}} - \text{em}_{3\text{B}}}) / ({\text{em}_{\text{teacher}} - \text{em}_{3\text{B}}})$, the 7B--3B gap accounts for \emph{at most} $12.3$/$13.8$/$12.6\%$ of the teacher--student gap---a stable $\approx$12--14\% upper bound (the 7B uses full-rank fine-tuning, more expressive than rank-32 LoRA, so the training-method advantage is conflated in). This is an upper bound on capacity alone. Crucially, the retrieval-quality bound must now be computed against the \emph{leakage-free} component of oracle recovery, not the full leakage-inclusive $+47.7$pp: using the passage-redacted oracle (\S\ref{sec:causal}, exp\_016) as the denominator, the non-leakage retrieval-quality upper bound is $\text{em}_{\text{oracle\_redacted\_full}} - \text{em}_{\text{honest\_search}} = 0.131 - 0.021 = 0.110$ at $N\!=\!8$, against which the $\approx$12--14\% capacity bound is no longer a trivial fraction. We therefore interpret capacity as accounting for a non-negligible share of the retrieval-quality-adjusted gap (on the order of comparable magnitude to the retrieval-quality component itself), while passage-level answer-leakage explains the remaining ${\sim}37$pp of the naive oracle gain.
 
 %--------------------------------------------------------------
 \subsection{Truncation and Behavioral Mismatch}
@@ -55,26 +55,64 @@ If the failure stems from executing search procedures without a retrieval backen
 \toprule
 & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
 \midrule
-SFT (no API) & 0.112 & 0.084 & 0.025 \\
+SFT (honest search) & 0.112 & 0.084 & 0.021 \\
 SFT + oracle API & \textbf{0.530} & \textbf{0.521} & \textbf{0.498} \\
-$\Delta$ & $+41.8$pp & $+43.7$pp & $+47.3$pp \\
+$\Delta$ & $+41.8$pp & $+43.7$pp & $+47.7$pp \\
 $p$ (bootstrap) & ${<}0.0001$ & ${<}0.0001$ & ${<}0.0001$ \\
 \midrule
 RL teacher\textsuperscript{$\dagger$} & 0.59 & 0.54 & 0.455 \\
 \bottomrule
 \end{tabular}%
 }
-\caption{Effect of providing oracle retrieval results at inference time. With real search results injected, the SFT student recovers from near-zero to near-teacher performance. Paired bootstrap, 10{,}000 resamples. \textsuperscript{$\dagger$}Teacher evaluated on a different prompt set; direct comparison is not valid.}
+\caption{Effect of providing oracle retrieval results at inference time. With real search results injected, the SFT student recovers from near-zero to near-teacher performance. Paired bootstrap, 10{,}000 resamples. The \texttt{honest\_search} condition is a real-FlashRAG retrieval baseline (not a \emph{no-search} setting): the student's \texttt{<search>} queries are executed by the production FlashRAG retrieval backend, returning real passages to the student via \texttt{<information>} blocks. The \texttt{oracle\_*} conditions bypass retrieval entirely and inject teacher-replayed passages. The $4.72\times$ latency gap between \texttt{honest\_search} and \texttt{oracle\_full} ($3666.7$\,s vs $777.4$\,s over 125 prompts) is fully accounted for by FlashRAG retrieval I/O overhead ($\sim 23$\,s/prompt; see Appendix~\ref{app:oracle_impl} and \texttt{exp\_016\_workdir/no\_api\_latency\_probe.json}). \textsuperscript{$\dagger$}Teacher evaluated on a different prompt set; direct comparison is not valid. Numbers in this table are computed on the phase1d\_v2 $N{=}8$ test subset ($n=125$); the exp\_006 canonical $N{=}8$ full test set yields $0.025 \to 0.498 = +47.3$pp (reported in Appendix~\ref{app:exp006_full_test}).}
 \label{tab:oracle_api}
 \end{table}
 
-Table~\ref{tab:oracle_api} shows oracle retrieval transforms student performance: em\_partial jumps $0.025\!\to\!0.498$ at $N\!=\!8$ ($+47.3$pp, $p<0.0001$, 95\% CI $[43.8,50.8]$pp); truncation drops $83.2\%\!\to\!0\%$. This provides an upper-bound on retrieval-only mitigation and is consistent with behavioural mismatch---not capacity---driving the failure: the student has learned a viable search strategy but lacks the execution environment. We note here that ``oracle'' is used throughout for brevity; the intervention is technically a \textit{teacher-retrieval replay} (we replay the teacher's actual retrieval output without any answer-key oracle), as formalised in Appendix~\ref{app:oracle_impl}.
+Table~\ref{tab:oracle_api} shows oracle retrieval transforms student performance: em\_partial jumps $0.021\!\to\!0.498$ at $N\!=\!8$ ($+47.7$pp, $p<0.0001$, 95\% CI $[44.6,50.9]$pp); truncation drops $83.2\%\!\to\!0\%$. This provides a \emph{leakage-inclusive upper-bound} on retrieval-only mitigation: the intervention is necessary but not sufficient evidence for a pure retrieval-quality bottleneck, because teacher-replayed passages also contain gold-answer substrings (Appendix~\ref{app:oracle_impl}). We note here that ``oracle'' is used throughout for brevity; the intervention is technically a \textit{teacher-retrieval replay} (we replay the teacher's actual retrieval output without any answer-key oracle).
 
-\paragraph{Answer Leakage Audit.}
-We audit potential answer leakage in teacher information segments. On 50 random $N{=}8$ evaluation prompts (seed=42, lowercased substring match), 98\% of teacher \texttt{<information>} blocks contain at least one gold-answer substring; on a derangement-shuffled control (teacher passages from unrelated prompts), the rate is 34\% (a 64\,pp real--shuffled gap that quantifies retrieval topic specificity). The absolute 98\% rate is high enough that we frame oracle recovery as a \emph{strict upper bound} on the retrieval-mitigation ceiling rather than a clean causal estimate. Two independent checks nevertheless bound the leakage contribution: (i) the teacher (MEM1) was trained with PPO outcome rewards only, with no gold-label supervision of the retriever; (ii) student $\mathrm{em\_full}$ at $N{=}8$ remains 0.008 under teacher-retrieval replay, three orders of magnitude below the ${\sim}1.0$ expected if passages directly exposed answers. We therefore interpret the $+47.3$\,pp em\_partial recovery as an upper-bound estimate of what retrieval-only mitigation can achieve, consistent with our ``two independent upper bounds, not a partition'' framing (Figure~\ref{fig:gap_decomposition}).
+\paragraph{Answer Leakage Audit and Passage-Redaction Ablation.}
+We audit potential answer leakage in teacher information segments. On 50 random $N{=}8$ evaluation prompts (seed=42, lowercased substring match), 98\% of teacher \texttt{<information>} blocks contain at least one gold-answer substring; on a derangement-shuffled control (teacher passages from unrelated prompts), the rate is 34\% (a 64\,pp real--shuffled gap that quantifies retrieval topic specificity). The absolute 98\% rate motivates a direct causal test: \textbf{passage-redaction} (exp\_016). On the full phase1d\_v2 $N{=}8$ test split (125 prompts), we re-evaluate the SFT student with oracle-replay under three redaction conditions---$0\%$ (\texttt{oracle\_full}, sanity-gated to within $\pm0.02$ of Table~\ref{tab:oracle_api}), $\sim\!50\%$ per-passage density (\texttt{oracle\_redacted\_half},
+uniform density halving applied to all $125/125$ oracle passages;
+\texttt{redact\_info\_block\_tag} produces $867$ substitutions vs $1663$
+in the full condition, ratio $0.52$; see Appendix~\ref{app:redaction}), and $100\%$ (\texttt{oracle\_redacted\_full})---replacing gold-answer substrings with a \texttt{[REDACTED]} placeholder under a word-boundary regex (see Appendix~\ref{app:redaction} for protocol and a pre-registered deviation log). Results (Table~\ref{tab:redaction_dose_response}, Figure~\ref{fig:redaction_dose_response}):
+\begin{itemize}[leftmargin=*,nosep]
+  \item em\_partial ($N{=}8$): $0.021$ (\texttt{honest\_search}) $\to 0.131$ (\texttt{oracle\_redacted\_full}) $\to 0.373$ (\texttt{oracle\_redacted\_half}) $\to 0.498$ (\texttt{oracle\_full}). The three intermediate points are strictly monotone ($0.131 < 0.373 < 0.498$), confirming a dose-response relationship in the redaction dimension.
+  \item $\Delta_{\text{full\_redact}} = +11.0$\,pp [$+8.8, +13.2$] (paired bootstrap 10k resamples, seed 42, vs \texttt{honest\_search}; $p < 0.0001$). This \emph{leakage-free} residual is the retrieval-quality contribution.
+  \item $\Delta_{\text{half\_redact}} = +35.2$\,pp [$+32.2, +38.2$]; $\Delta_{\text{oracle\_full}} = +47.7$\,pp [$+44.6, +50.9$].
+  \item Decomposition: retrieval-quality contributes $\approx 11$\,pp ($\approx 23\%$ of oracle gain); passage-level answer-leakage-assisted decoding contributes $\approx 36.7$\,pp $[+33.5, +40.0]$ ($\approx 77\%$; paired bootstrap 10k resamples, seed 42, on \texttt{oracle\_full} $-$ \texttt{oracle\_redacted\_full}, $p < 0.0001$).
+\end{itemize}
+
+\paragraph{Span-importance distribution.}
+Halving the per-passage substitution density (from $1663$ to $867$ total \texttt{[REDACTED]} substitutions across all $125/125$ passages, ratio $0.52$ via the preprocessing-level \texttt{redact\_info\_block\_tag} tool) retains $73.8\%$ of the oracle gain ($0.352 / 0.477$). The first half of substitutions per passage therefore contributes approximately $74\%$ of the leakage mechanism, while the second half contributes only $\approx 26\%$. This is consistent with a Pareto-like distribution of span importance---the highest-information gold-answer substrings carry disproportionate memorization weight---but the effect is less extreme than a uniform-span model would predict (where halving density should yield $\approx 50\%$ recovery, not $74\%$). The span-importance asymmetry is itself an upper bound (word-boundary substring redaction removes exact-match but not paraphrase hints).
+
+This is a \emph{partial-mechanism} verdict by our pre-registered gates (\S3.5 decision table, plan.md \S6): retrieval execution is necessary (the non-zero retrieval-quality residual is statistically and practically significant, $+11$\,pp is larger than both the DPO effect and the capacity-isolation effect of the 7B SFT) but not sufficient (the majority of the oracle gain evaporates once passage-level answer substrings are masked). The orthogonal checks from the v3.4 audit still apply as \emph{lower bounds} on mechanism separation: (i) the teacher (MEM1) was trained with PPO outcome rewards only, with no gold-label supervision of the retriever; (ii) student $\mathrm{em\_full}$ at $N{=}8$ remains $0.008$ under teacher-retrieval replay, three orders of magnitude below the ${\sim}1.0$ expected if passages directly exposed answers as full strings. The $77\%$ leakage component therefore reflects \emph{substring-level answer exposure enabling short-form decoding}, not full-answer copy-paste, and is itself an upper bound on leakage (word-boundary substring redaction removes exact-match but not paraphrase hints).
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+Condition & em\_partial ($N{=}8$) & $\Delta$ vs honest\_search \\
+\midrule
+honest\_search          & $0.021$ & --- \\
+oracle\_redacted\_full  & $0.131$ & $+11.0$\,[$+8.8,+13.2$] \\
+oracle\_redacted\_half  & $0.373$ & $+35.2$\,[$+32.2,+38.2$] \\
+oracle\_full            & $0.498$ & $+47.7$\,[$+44.6,+50.9$] \\
+\bottomrule
+\end{tabular}
+\caption{Passage-redaction dose-response on phase1d\_v2 $N{=}8$ test ($n=125$). Bootstrap CI: paired, 10k resamples, seed 42. Monotone across conditions. Retrieval-quality residual (\texttt{oracle\_redacted\_full} $-$ \texttt{honest\_search}) is $+11.0$\,pp ($\approx 23\%$ of full oracle gain); the remaining $\approx 37$\,pp is the passage-level answer-leakage component.}
+\label{tab:redaction_dose_response}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figure5_dose_response.pdf}
+\caption{Passage-redaction dose-response ($N{=}8$, $n=125$). $x$-axis: redaction level ($0\%$/$50\%$/$100\%$ of gold-answer substrings redacted from oracle passages). $y$-axis: em\_partial. Error bars are paired-bootstrap $95\%$ CI vs \texttt{honest\_search} (seed 42, 10k). Horizontal dashed line marks the \texttt{honest\_search} floor ($0.021$). Monotone dose-response confirms retrieval quality contributes a non-zero but minority share ($\sim 23\%$) of the oracle gain; passage-level answer-leakage accounts for the $\sim 77\%$ majority.}
+\label{fig:redaction_dose_response}
+\end{figure}
 
 \paragraph{Realistic retrieval: BM25.}
-Replacing oracle with BM25 recovers $14$--$26\%$ of the oracle gain: em\_partial improves $0.025\!\to\!0.147$ at $N\!=\!8$ ($+12.2$pp; Table~\ref{tab:bm25}, Figure~\ref{fig:retrieval_recovery}), with truncation dropping to $0\%$ across all $N$. The BM25 index is built from the \emph{Doc chunks extracted from the teacher's own \texttt{<information>} blocks} across all training trajectories ($N\!\in\!\{2,4,8\}$), i.e., the passages the FlashRAG-backed teacher retriever actually returned during RL rollouts. This index therefore lies within the distribution of documents the teacher saw during RL training rather than a held-out Wikipedia dump, so the $+12.2$pp recovery is an upper bound on what a BM25 deployment can achieve over this exact document pool (not a generalisation-to-new-corpus bound). The BM25--oracle gap reflects retrieval quality, not student capability: the student's queries match the teacher's (Jaccard $=0.95$).
+Replacing oracle with BM25 recovers $14$--$26\%$ of the oracle gain: em\_partial improves $0.021\!\to\!0.147$ at $N\!=\!8$ ($+12.6$pp; Table~\ref{tab:bm25}, Figure~\ref{fig:retrieval_recovery}), with truncation dropping to $0\%$ across all $N$. The BM25 index is built from the \emph{Doc chunks extracted from the teacher's own \texttt{<information>} blocks} across all training trajectories ($N\!\in\!\{2,4,8\}$), i.e., the passages the FlashRAG-backed teacher retriever actually returned during RL rollouts. This index therefore lies within the distribution of documents the teacher saw during RL training rather than a held-out Wikipedia dump, so the $+12.6$pp recovery is an upper bound on what a BM25 deployment can achieve over this exact document pool (not a generalisation-to-new-corpus bound). The BM25--oracle gap reflects retrieval quality, not student capability: the student's queries match the teacher's (Jaccard $=0.95$).
 
 \begin{table}[t]
 \centering
@@ -84,7 +122,7 @@ Replacing oracle with BM25 recovers $14$--$26\%$ of the oracle gain: em\_partial
 \toprule
 & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
 \midrule
-SFT (no API) & 0.112 & 0.084 & 0.025 \\
+SFT (honest search) & 0.112 & 0.084 & 0.021 \\
 SFT + BM25 & 0.203 & 0.147 & 0.147 \\
 SFT + oracle API & \textbf{0.530} & \textbf{0.521} & \textbf{0.498} \\
 \midrule
@@ -92,7 +130,7 @@ RL teacher & 0.59 & 0.54 & 0.455 \\
 \bottomrule
 \end{tabular}%
 }
-\caption{em\_partial under different retrieval conditions. BM25 retrieval recovers a meaningful fraction of the oracle gain ($+9.2$pp at $N\!=\!2$, $+12.2$pp at $N\!=\!8$) and eliminates truncation entirely ($0\%$ across all $N$). The remaining gap to oracle reflects retrieval quality, not student strategy.}
+\caption{em\_partial under different retrieval conditions. BM25 retrieval recovers a meaningful fraction of the oracle gain ($+9.1$pp at $N\!=\!2$, $+12.6$pp at $N\!=\!8$) and eliminates truncation entirely ($0\%$ across all $N$). The remaining gap to oracle reflects retrieval quality, not student strategy.}
 \label{tab:bm25}
 \end{table}
 
@@ -110,12 +148,12 @@ The student averages exactly $1.0$ search per prompt across 507 test cases---mat
 \subsection{Synthesis}
 \label{sec:synthesis}
 
-The evidence converges on three points: (i)~\textbf{preference learning leaves the SVD alignment ratio unchanged}---an observational correlate that does not drive protocol decisions; DPO remains within $1$pp of SFT at $N\!=\!8$ despite richer training signal, against the $2$--$6\!\times$ vs.\ $1.47\!\times$ supra-random alignment gap (\S\ref{sec:framework}); the causal root of the em\_partial gap is isolated by the oracle retrieval intervention (\S\ref{sec:causal}), not by this geometric observation; (ii)~\textbf{the student imitates a strategy it cannot execute}---oracle retrieval recovers em\_partial $0.025\!\to\!0.498$ at $N\!=\!8$ ($+47.3$pp, $p<0.0001$; \S\ref{sec:causal}), confirming a viable search strategy (Jaccard $0.95$) but no execution environment; (iii)~\textbf{truncation distorts the comparison}---after controlling for budget, the DPO advantage shrinks from $+2.4$pp ($p<0.001$) to $+1.0$pp ($p=0.163$). At most $12$--$14\%$ of the gap is attributable to capacity (\S\ref{sec:capacity}); the remainder is bounded above by retrieval-quality recovery, which itself exceeds $100\%$ of the teacher gap in our oracle probe. The capacity and retrieval-quality bounds are two independent upper bounds, not a complementary partition, and should not be read as summing to $100\%$ (Figure~\ref{fig:gap_decomposition}).
+The evidence converges on three points: (i)~\textbf{preference learning leaves the SVD alignment ratio unchanged}---an observational correlate that does not drive protocol decisions; DPO remains within $1$pp of SFT at $N\!=\!8$ despite richer training signal, against the $2$--$6\!\times$ vs.\ $1.47\!\times$ supra-random alignment gap (\S\ref{sec:framework}); the causal root of the em\_partial gap is isolated by the oracle retrieval intervention (\S\ref{sec:causal}), not by this geometric observation; (ii)~\textbf{the student imitates a strategy it can partially execute but not exploit}---oracle retrieval recovers em\_partial $0.021\!\to\!0.498$ at $N\!=\!8$ ($+47.7$pp, $p<0.0001$; \S\ref{sec:causal}), but a passage-redaction ablation attributes only ${\sim}11$pp of this to retrieval quality and ${\sim}37$pp to passage-level answer-leakage-assisted decoding. Retrieval execution is therefore \emph{necessary but not sufficient}: the student's queries match the teacher's (Jaccard $0.95$) and the retrieval backend reliably surfaces topic-relevant passages, but the student cannot fully leverage those passages in the absence of near-substring answer hints. The teacher--student gap then has two distinct sub-failures: (a) retrieval precision (closed by any real retrieval backend, $+11$\,pp headroom) and (b) student-side passage utilisation without substring hints (the remaining $+37$\,pp, not closed by retrieval alone). (iii)~\textbf{truncation distorts the comparison}---after controlling for budget, the DPO advantage shrinks from $+2.4$pp ($p<0.001$) to $+1.0$pp ($p=0.163$). At most $12$--$14\%$ of the gap is attributable to capacity (\S\ref{sec:capacity}); this remains an independent upper bound alongside the retrieval-quality ($\sim 11$\,pp) and leakage ($\sim 37$\,pp) components (Figure~\ref{fig:gap_decomposition}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{gap_decomposition.pdf}
-\caption{Teacher--student gap: two independent upper bounds, not a complementary partition. Capacity bound $(\text{em}_{7\text{B}}-\text{em}_{3\text{B}})/(\text{em}_\text{teacher}-\text{em}_{3\text{B}})=12.6\%$ at $N\!=\!8$. Retrieval-quality bound: oracle intervention recovers $110\%$ of the teacher gap at $N\!=\!8$, exceeding 100\% because the oracle replay isolates retrieval from search-strategy mismatch, while the teacher's observed gap compounds both retrieval and search costs.}
+\caption{Teacher--student gap: three components after the passage-redaction decomposition. Capacity bound $(\text{em}_{7\text{B}}-\text{em}_{3\text{B}})/(\text{em}_\text{teacher}-\text{em}_{3\text{B}})=12.6\%$ at $N\!=\!8$ (independent upper bound, not part of the oracle partition). Retrieval-quality ($\sim 11$\,pp, $\sim 23\%$ of oracle gain) and passage-level answer-leakage-assisted decoding ($\sim 37$\,pp, $\sim 77\%$) partition the leakage-inclusive oracle gain after exp\_016 passage-redaction (\S\ref{sec:causal}, Table~\ref{tab:redaction_dose_response}).}
 \label{fig:gap_decomposition}
 \end{figure}
 
@@ -133,7 +171,7 @@ To test whether the diagnosis generalises beyond Qwen2.5-3B, we re-run the entir
 \toprule
 Backbone & Condition & $N\!=\!2$ & $N\!=\!4$ & $N\!=\!8$ \\
 \midrule
-\multirow{3}{*}{Qwen-3B} & No API & $0.112$ & $0.084$ & $0.025$ \\
+\multirow{3}{*}{Qwen-3B} & No API & $0.112$ & $0.084$ & $0.021$ \\
                         & + BM25 & $0.203$ & $0.147$ & $0.147$ \\
                         & + Oracle & $\mathbf{0.530}$ & $\mathbf{0.521}$ & $\mathbf{0.498}$ \\
 \midrule
@@ -145,8 +183,8 @@ RL teacher (7B) & --- & $0.59$ & $0.54$ & $0.455$ \\
 \bottomrule
 \end{tabular}%
 }
-\caption{Cross-backbone replication of the diagnostic framework (em\_partial). The Llama-1B student reproduces the Qwen-3B silent-failure signature: near-floor no-API performance, partial BM25 recovery, and large oracle recovery (truncation drops from 30--86\% to 0\% across all $N$). The Llama-1B numbers sit below Qwen-3B across conditions---consistent with the capacity contribution quantified in \S\ref{sec:capacity}---but the \emph{diagnostic shape} is preserved.}
+\caption{Cross-backbone replication of the diagnostic framework (em\_partial). The Llama-1B student reproduces the Qwen-3B silent-failure signature: near-floor \texttt{honest\_search} performance, partial BM25 recovery, and large oracle recovery (truncation drops from 30--86\% to 0\% across all $N$). The Llama-1B numbers sit below Qwen-3B across conditions---consistent with the capacity contribution quantified in \S\ref{sec:capacity}---but the \emph{diagnostic shape} is preserved.}
 \label{tab:cross_backbone}
 \end{table}
 
-Table~\ref{tab:cross_backbone} shows every diagnostic signal reappears on Llama-1B: (i)~truncation scales monotonically ($29.9\%\!\to\!51.2\%\!\to\!85.6\%$ vs.\ Qwen's $30.7\%\!\to\!55.7\%\!\to\!83.2\%$); (ii)~oracle retrieval drops truncation to $0\%$ at every $N$ with a $+33.7$pp gain at $N\!=\!8$ (vs.\ $+47.3$pp for Qwen, both large and monotonic in $N$); (iii)~BM25 partially recovers performance and also collapses truncation. Surface metrics at $N\!=\!8$ are backbone-agnostic to within noise: tool-call syntax $=1.00$, balanced XML $=1.00$, non-empty queries $=1.00$, BLEU $=1.16$, ROUGE-L $=0.21$ (Appendix~\ref{app:silent_failure_full}). Action-sequence accuracy $=0.606$ for both students, but per-sample forensics (Appendix~\ref{app:asa_forensics}) reveals this coincidence is structurally degenerate: both backbones emit the identical 3-token action prefix on every sample, so the score reduces to $3/n_\text{teacher}$. This metric therefore reflects a shared action-prefix pattern, not an independently diagnostic signal of silent failure. The transferable lesson is the protocol, not the specific 3B model it was developed on; the remaining surface estimates (BLEU, ROUGE-L) show overlapping bootstrap CIs at floor level (Appendix~\ref{app:dispersion}).
+Table~\ref{tab:cross_backbone} shows every diagnostic signal reappears on Llama-1B: (i)~truncation scales monotonically ($29.9\%\!\to\!51.2\%\!\to\!85.6\%$ vs.\ Qwen's $30.7\%\!\to\!55.7\%\!\to\!83.2\%$); (ii)~oracle retrieval drops truncation to $0\%$ at every $N$ with a $+33.7$pp gain at $N\!=\!8$ (vs.\ $+47.7$pp for Qwen, both large and monotonic in $N$); (iii)~BM25 partially recovers performance and also collapses truncation. Surface metrics at $N\!=\!8$ are backbone-agnostic to within noise: tool-call syntax $=1.00$, balanced XML $=1.00$, non-empty queries $=1.00$, BLEU $=1.16$, ROUGE-L $=0.21$ (Appendix~\ref{app:silent_failure_full}). Action-sequence accuracy $=0.606$ for both students, but per-sample forensics (Appendix~\ref{app:asa_forensics}) reveals this coincidence is structurally degenerate: both backbones emit the identical 3-token action prefix on every sample, so the score reduces to $3/n_\text{teacher}$. This metric therefore reflects a shared action-prefix pattern, not an independently diagnostic signal of silent failure. The transferable lesson is the protocol, not the specific 3B model it was developed on; the remaining surface estimates (BLEU, ROUGE-L) show overlapping bootstrap CIs at floor level (Appendix~\ref{app:dispersion}).
