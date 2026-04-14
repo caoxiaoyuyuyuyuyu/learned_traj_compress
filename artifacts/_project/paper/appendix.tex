@@ -169,15 +169,16 @@ To verify that the oracle retrieval intervention does not trivially leak gold-an
 \toprule
 Condition & Ratio (gold-answer hit / 50) \\
 \midrule
-Real (teacher's own info blocks) & 50 / 50 = 100.00\% \\
-Shuffled control (unrelated prompts) & 28 / 50 = 56.00\% \\
+Real (teacher's own info blocks) & 49 / 50 = 98.00\% \\
+Shuffled (derangement) control & 17 / 50 = 34.00\% \\
+$\Delta$ (real $-$ shuffled) & 64\,pp \\
 \bottomrule
 \end{tabular}
 \caption{Oracle retrieval leakage audit on 50 random N=8 test prompts.}
 \label{tab:leakage_audit}
 \end{table}
 
-\paragraph{Interpretation.} The 44\,pp real-vs-shuffled delta isolates \emph{retrieval topic specificity}, not answer leakage. Three falsifiers rule out a leak interpretation: \textbf{(i)} the teacher MEM1 policy is trained with PPO on outcome rewards only, and its FlashRAG retriever receives no gold-label supervision at rollout time; \textbf{(ii)} under teacher-retrieval replay, student $\mathrm{em\_full}$ at $N=8$ remains $0.008$, far below the $\approx 1.0$ rate expected if passages directly exposed answers; \textbf{(iii)} the 56\% baseline rate reflects that extractive Wikipedia QA datasets (NQ, TriviaQA, HotpotQA) construct gold answers to occur in any on-topic Wikipedia passage, so a high absolute rate is an expected functional-retrieval property rather than a leakage signature. Accordingly, the $+47.3$\,pp oracle recovery should be read as a \emph{strict upper bound} on retrieval-side mitigation, not as a demonstration of perfect answer access.
+\paragraph{Interpretation.} The absolute 98\% real-hit rate is high, and the audit script's built-in decision threshold (${>}30\%$) tags this rate as ``non-trivial leakage''; we therefore retain the experiment as an \emph{upper-bound probe}, not as a clean causal estimate. Two independent checks nevertheless bound the leakage contribution: \textbf{(i)} the teacher MEM1 policy is trained with PPO on outcome rewards only, and its FlashRAG retriever receives no gold-label supervision at rollout time; \textbf{(ii)} under teacher-retrieval replay, student $\mathrm{em\_full}$ at $N=8$ remains $0.008$, far below the $\approx 1.0$ rate expected if passages directly exposed answers. Accordingly, the $+47.3$\,pp oracle em\_partial recovery should be read as a \emph{strict upper bound} on retrieval-side mitigation, not as a demonstration of perfect answer access. The 64\,pp real$-$shuffled gap itself quantifies retrieval topic specificity relative to the derangement baseline.
 
 \paragraph{Limitations.} The substring match does not distinguish partial lexical overlap from semantic coverage; 50 samples is a sanity check rather than a full audit. A comprehensive audit covering all splits and semantic paraphrase matching is deferred to camera-ready.
 

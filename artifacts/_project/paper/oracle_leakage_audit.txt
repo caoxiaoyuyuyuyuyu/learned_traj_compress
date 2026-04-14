@@ -1,0 +1,59 @@
+eval_path: artifacts/exp_009_eval/eval_sft_shared_api_oracle.json
+n_total_in_split: 125
+n_sampled: 50
+n_contain_answer: 49
+ratio: 98.00%
+n_contain_shuffled: 17
+ratio_shuffled: 34.00%
+seed: 42
+---
+idx=81 hit=True info_chars=1878 hit_answer=Sparafucile
+idx=14 hit=True info_chars=1877 hit_answer=band
+idx=3 hit=True info_chars=1867 hit_answer=Louis XIV
+idx=94 hit=True info_chars=1876 hit_answer=Gerard "Gerry" Adams
+idx=35 hit=True info_chars=1871 hit_answer=David Naughton, Jenny Agutter and Griffin Dunne
+idx=31 hit=True info_chars=1877 hit_answer=orange
+idx=28 hit=True info_chars=1871 hit_answer=Harrison County, Mississippi
+idx=17 hit=True info_chars=1873 hit_answer=Polka
+idx=121 hit=True info_chars=1871 hit_answer=Salvia
+idx=13 hit=True info_chars=1868 hit_answer=Cleveland Cavaliers
+idx=86 hit=True info_chars=1875 hit_answer=Thomas Loren Friedman
+idx=116 hit=True info_chars=1869 hit_answer=no
+idx=69 hit=True info_chars=1872 hit_answer=Big Machine Records
+idx=11 hit=True info_chars=1874 hit_answer=as loud and dirty as possible
+idx=75 hit=True info_chars=1867 hit_answer=John Candy
+idx=54 hit=True info_chars=1875 hit_answer=Robert Smigel, Michael Koman and David Feldman
+idx=4 hit=True info_chars=1876 hit_answer=lower chamber
+idx=122 hit=True info_chars=1878 hit_answer=secondary school study
+idx=111 hit=True info_chars=1867 hit_answer=Liga MX
+idx=27 hit=True info_chars=1878 hit_answer=the jack
+idx=29 hit=True info_chars=1869 hit_answer=Prussia
+idx=64 hit=True info_chars=1872 hit_answer=Oklahoma Sooners
+idx=77 hit=True info_chars=1872 hit_answer=Westfield Old Orchard
+idx=107 hit=True info_chars=1875 hit_answer=more than 10 million
+idx=71 hit=False info_chars=1868 hit_answer=None
+idx=25 hit=True info_chars=1868 hit_answer=Nature's Symphony in 432
+idx=91 hit=True info_chars=1871 hit_answer=The Whitewater Canal
+idx=83 hit=True info_chars=1863 hit_answer=Corendon Airlines
+idx=89 hit=True info_chars=1864 hit_answer=13 seasons
+idx=112 hit=True info_chars=1875 hit_answer=1968
+idx=53 hit=True info_chars=1875 hit_answer=2006
+idx=118 hit=True info_chars=1879 hit_answer=no
+idx=57 hit=True info_chars=1874 hit_answer=Francisco Rafael Arellano Félix
+idx=110 hit=True info_chars=1873 hit_answer=Battle Creek, Michigan
+idx=120 hit=True info_chars=1873 hit_answer=Scarface
+idx=0 hit=True info_chars=1864 hit_answer=novelist
+idx=20 hit=True info_chars=1877 hit_answer=Diamond Rio
+idx=109 hit=True info_chars=1864 hit_answer=1977
+idx=43 hit=True info_chars=1873 hit_answer=genus
+idx=90 hit=True info_chars=1864 hit_answer=Morris Canal
+idx=19 hit=True info_chars=1876 hit_answer=Tim Cluess
+idx=105 hit=True info_chars=1873 hit_answer=Louis King
+idx=48 hit=True info_chars=1875 hit_answer=City Mazda Stadium
+idx=114 hit=True info_chars=1870 hit_answer=University of Texas Longhorns
+idx=115 hit=True info_chars=1868 hit_answer=Yellowcraig
+idx=106 hit=True info_chars=1871 hit_answer=the 1996 NBA Slam Dunk Contest
+idx=12 hit=True info_chars=1880 hit_answer=Kurt Vonnegut
+idx=45 hit=True info_chars=1860 hit_answer=2016–17 NHL season
+idx=44 hit=True info_chars=1874 hit_answer=Khonsu
+idx=33 hit=True info_chars=1871 hit_answer=Farrell

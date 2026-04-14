@@ -30,7 +30,7 @@ import string
 import sys
 
 
-INFO_BLOCK_RE = re.compile(r"<information>(.*?)</information>", re.DOTALL)
+INFO_BLOCK_RE = re.compile(r"<information>(.*?)(?:</information>|$)", re.DOTALL)
 
 
 def _norm(s: str) -> str:

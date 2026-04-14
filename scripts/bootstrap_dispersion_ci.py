@@ -125,6 +125,7 @@ def main():
 
     # markdown
     md = [
+        f"<!-- bootstrap: {N_BOOT} resamples, seed=42, generator=scripts/bootstrap_dispersion_ci.py -->",
         "| Backbone | Retrieval | Metric | Split | N | Mean | 95% CI |",
         "|----------|-----------|--------|-------|---|------|--------|",
     ]
@@ -135,6 +136,7 @@ def main():
 
     # LaTeX (booktabs)
     tex = [
+        f"% bootstrap: {N_BOOT} resamples, seed=42, generator=scripts/bootstrap_dispersion_ci.py",
         r"\begin{tabular}{llllrrr}",
         r"\toprule",
         r"Backbone & Retrieval & Metric & Split & $N$ & Mean & 95\% CI \\",
