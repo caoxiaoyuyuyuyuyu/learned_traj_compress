@@ -8,13 +8,10 @@ Phase~1 narrowed the distillation failure to a geometric gap in weight space tha
 \label{sec:distill_design}
 
 \paragraph{Training pipeline.}
-We train a pooled SFT baseline and three per-$N$ DPO variants on Qwen2.5-3B (LoRA~\cite{hu2022lora}, rank 32). The SFT stage uses 1{,}118 partial-credit trajectories (pooled across $N \in \{2, 4, 8\}$; inclusion criterion: $\text{total\_em} \geq 1$) for 3 epochs with $\text{lr} = 2 \times 10^{-4}$. Each DPO stage initializes from the SFT checkpoint and trains on $N$-specific preference pairs matched at 176 raw pairs ($\approx$109--114 train after hash-based split), with $\beta = 0.05$, $\text{lr} = 2 \times 10^{-5}$, and 1 epoch. Training details and convergence curves are in Appendix~\ref{app:training}.
+We train a pooled SFT baseline and three per-$N$ DPO variants on Qwen2.5-3B (LoRA~\cite{hu2022lora} rank 32). SFT uses 1{,}118 partial-credit trajectories (pooled $N\!\in\!\{2,4,8\}$; $\text{total\_em}\!\geq\!1$) for 3 epochs at $\text{lr}\!=\!2\!\times\!10^{-4}$. Each DPO variant initialises from the SFT checkpoint, trains on $N$-specific preference pairs matched to $176$ raw pairs at $\beta\!=\!0.05$, $\text{lr}\!=\!2\!\times\!10^{-5}$, 1 epoch. Full hyperparameters in Appendix~\ref{app:training}.
 
-\paragraph{Matched-sample design.}
-The matched-sample constraint is critical for fair cross-$N$ comparison but severely limits data volume. At $N\!=\!4$, the teacher produces only 176 usable preference pairs (from 500 prompts at $15.2\%$ perfect rate); at $N\!=\!8$, only $0.4\%$ of trajectories achieve perfect scores. We subsample all DPO conditions to the $N\!=\!4$ bottleneck of 176 raw pairs. This scarcity is a \emph{structural consequence} of multi-objective collapse: the teacher's own declining success rate at high $N$ limits the supply of contrastive training signal, and generating more prompts does not resolve it.
-
-\paragraph{Evaluation protocol.}
-All models are evaluated on held-out test sets (hash-based split, $\text{test\_frac}=0.25$) for $N \in \{2, 4, 8\}$ with $\text{max\_new\_tokens}=4096$, yielding 251, 131, and 125 test prompts respectively. We report em\_partial (primary metric; per-objective EM averaged across objectives and prompts), em\_full (all-$N$-correct), and truncated\_rate (fraction of outputs reaching the token limit). Statistical significance is assessed via paired bootstrap (1{,}000 resamples). We pre-registered a practical-significance threshold of $\Delta \text{em\_partial} \geq +5$pp at $N\!=\!8$ with $p < 0.05$ before Stage~1 training began, representing $\approx$11\% recovery of teacher capability---the minimum we deemed meaningful for justifying the DPO pipeline.
+\paragraph{Evaluation.}
+Models are evaluated on held-out splits (hash-based, $\text{test\_frac}=0.25$) for $N\!\in\!\{2,4,8\}$ with $\text{max\_new\_tokens}=4096$ ($251/131/125$ prompts). We report em\_partial, em\_full, and truncated\_rate; significance via paired bootstrap (1{,}000 resamples); pre-registered practical-significance threshold $\Delta\text{em\_partial}\!\geq\!+5$pp at $N\!=\!8$. The matched-sample constraint subsamples DPO to the $N\!=\!4$ bottleneck of 176 raw pairs---a structural consequence of multi-objective collapse rather than a remediable sampling issue (Appendix~\ref{app:dpo}).
 
 %--------------------------------------------------------------
 \subsection{DPO and Capacity Ablations}
@@ -30,13 +27,13 @@ A 7B full-rank pooled SFT (same data/inclusion as the 3B LoRA student) consisten
 \subsection{Truncation and Behavioral Mismatch}
 \label{sec:suppression}
 
-The $>80\%$ truncation rate observed without retrieval reflects hallucinated search traces that exhaust the generation budget; detailed causal analysis including suppression ablation (Appendix~\ref{app:trunc_confound}) shows truncation is the surface manifestation, not the root cause, of behavioral mismatch. The SFT student reproduces the teacher's multi-turn action structure (\texttt{<think>} $\to$ \texttt{<search>} $\to$ \texttt{<information>} $\to$ \texttt{<answer>}), but without a retrieval API the search/information segments contain hallucinated content that consumes the budget. Truncation scales monotonically with $N$ ($30.7\% \to 55.7\% \to 83.2\%$ at $N\!=\!2/4/8$), and DPO exhibits the same pattern, confirming that preference learning does not teach a token-efficient strategy.
+We identified and controlled for a truncation artefact that inflated early DPO signal: without retrieval, both students hallucinate \texttt{<search>}/\texttt{<information>} segments that consume $>80\%$ of the generation budget, causing $\geq 83\%$ output truncation at $N\!=\!8$ (truncation scales monotonically as $30.7\%\!\to\!55.7\%\!\to\!83.2\%$ for $N\!=\!2/4/8$, with DPO showing the same pattern). A suppression ablation (Appendix~\ref{app:trunc_confound}) confirms truncation is the surface manifestation, not the root cause, of behavioral mismatch.
 
 %--------------------------------------------------------------
 \subsection{Causal Verification: Oracle Retrieval}
 \label{sec:causal}
 
-The observational evidence in \S\ref{sec:suppression} raises a natural intervention: if the student's failure stems from executing search procedures without a retrieval backend, then \emph{providing} the backend should recover performance. We test this by intercepting the student's \texttt{<search>} outputs at inference time and injecting oracle retrieval results from the RL teacher's trajectories (the same passages the teacher used for each test prompt).
+If the failure stems from executing search procedures without a retrieval backend, providing the backend should recover performance. We test this by intercepting the student's \texttt{<search>} outputs at inference time and injecting oracle retrieval results from the RL teacher's trajectories.
 
 \begin{table}[t]
 \centering
@@ -59,10 +56,10 @@ RL teacher\textsuperscript{$\dagger$} & 0.59 & 0.54 & 0.455 \\
 \label{tab:oracle_api}
 \end{table}
 
-Table~\ref{tab:oracle_api} shows that providing real retrieval results transforms student performance: em\_partial jumps from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$, 95\% CI $[43.8, 50.8]$pp). Truncation drops from $83.2\%$ to $0\%$---the student completes every output when search queries return real passages instead of hallucinated content. This constitutes causal evidence that behavioral mismatch, not capacity limitations alone, drives the distillation failure: the student has learned a viable search strategy but lacks the execution environment to realize it.
+Table~\ref{tab:oracle_api} shows oracle retrieval transforms student performance: em\_partial jumps $0.025\!\to\!0.498$ at $N\!=\!8$ ($+47.3$pp, $p<0.0001$, 95\% CI $[43.8,50.8]$pp); truncation drops $83.2\%\!\to\!0\%$. This is causal evidence that behavioral mismatch---not capacity---drives the failure: the student has learned a viable search strategy but lacks the execution environment.
 
 \paragraph{Realistic retrieval: BM25.}
-The oracle setting uses teacher passages and thus provides an upper bound. To assess a deployable configuration, we replace oracle retrieval with BM25 (top-4 passages from the same corpus). Table~\ref{tab:bm25} and Figure~\ref{fig:retrieval_recovery} show that BM25 retrieval recovers a substantial fraction of the oracle gain: em\_partial improves from $0.025$ to $0.147$ at $N\!=\!8$ ($+12.2$pp), with truncation dropping to $0\%$ across all $N$. The BM25 student recovers $14$--$26\%$ of the oracle improvement, with the largest relative gain at $N\!=\!8$ where the no-API baseline is most degraded. The gap between BM25 and oracle ($0.147$ vs.\ $0.498$ at $N\!=\!8$) reflects retrieval quality rather than student capability: the student's queries closely match the teacher's (Jaccard $= 0.95$), but BM25's top-4 recall is substantially lower than oracle injection.
+Replacing oracle with BM25 (top-4 passages from the same corpus) recovers $14$--$26\%$ of the oracle gain: em\_partial improves $0.025\!\to\!0.147$ at $N\!=\!8$ ($+12.2$pp; Table~\ref{tab:bm25}, Figure~\ref{fig:retrieval_recovery}), with truncation dropping to $0\%$ across all $N$. The BM25--oracle gap reflects retrieval quality, not student capability: the student's queries match the teacher's (Jaccard $=0.95$).
 
 \begin{table}[t]
 \centering
@@ -91,40 +88,27 @@ RL teacher & 0.59 & 0.54 & 0.455 \\
 \label{fig:retrieval_recovery}
 \end{figure}
 
-\paragraph{Query fidelity and search behavior.}
-The student averages exactly $1.0$ search per prompt across all 507 test cases. Crucially, this is not a simplification of the teacher's strategy: analysis of the teacher's training trajectories reveals that $>$95\% of teacher responses also contain a single search round (mean searches: $1.04$ at $N\!=\!2$, $1.01$ at $N\!=\!4$, $1.06$ at $N\!=\!8$), because the prompt prefix already includes the first retrieval result. Furthermore, the student's search queries closely match the teacher's: mean Jaccard similarity is $0.95$ (median $= 1.0$, $n = 507$). SFT thus faithfully transfers both the search pattern and the query formulation---the bottleneck is purely the absence of a retrieval backend, not a failure of strategy learning.
-
-\paragraph{Why em\_full remains low.}
-Despite recovering em\_partial to near-teacher levels, em\_full remains low under oracle retrieval ($0.008$ at $N\!=\!8$). Per-objective analysis reveals that individual objective accuracy is $\approx$50\% (range 38--58\% across positions), with no systematic decay across objective index. The low em\_full follows from probability stacking: if each of $N$ objectives is independently correct with probability $\approx 0.5$, the probability of \emph{all} $N$ being correct is $\approx 0.5^N$ ($0.4\%$ at $N\!=\!8$), consistent with the observed $0.8\%$. The single search round retrieves information relevant to a subset of objectives; full coverage would require multiple targeted searches.
+\paragraph{Query fidelity.}
+The student averages exactly $1.0$ search per prompt across 507 test cases---matching the teacher's $1.04/1.01/1.06$ at $N\!=\!2/4/8$ (the prompt prefix already includes the first retrieval result)---and its queries match the teacher's at mean Jaccard $0.95$ (median $1.0$). SFT faithfully transfers both the search pattern and the query formulation; the bottleneck is purely the absence of a retrieval backend. Despite recovering em\_partial to near-teacher levels, em\_full remains low ($0.008$ at $N\!=\!8$) due to per-objective $\approx$50\% independence stacking ($0.5^N\!\approx\!0.4\%$ at $N\!=\!8$).
 
 %--------------------------------------------------------------
 \subsection{Synthesis}
 \label{sec:synthesis}
 
-The analyses in this section converge on a consistent diagnostic:
-
-\begin{enumerate}[leftmargin=*,nosep]
-    \item \textbf{Preference learning does not close the geometric gap.} RL weight changes are $2$--$6\times$ supra-random aligned with the base model's principal directions (\S\ref{sec:svd}), while SFT achieves only $1.47\times$. DPO---which provides richer training signal---does not bridge this gap: all DPO variants remain within $1$pp of SFT at $N\!=\!8$.
-
-    \item \textbf{The student imitates a strategy it cannot execute---causally supported.} The RL teacher's multi-objective capability is inseparable from its iterative search procedure. SFT transfers this procedure, but without the retrieval backend, hallucinated search traces exhaust the generation budget. Providing oracle retrieval at inference time recovers em\_partial from $0.025$ to $0.498$ at $N\!=\!8$ ($+47.3$pp, $p < 0.0001$; \S\ref{sec:causal}), confirming that the student possesses a viable search strategy but lacks execution capability.
-
-    \item \textbf{Truncation masks and distorts the comparison.} At insufficient generation budgets, truncation disproportionately penalizes the more verbose model (SFT), creating a spurious advantage for DPO. After controlling for this confound, the DPO advantage shrinks from $+2.4$pp ($p < 0.001$) to $+1.0$pp ($p = 0.163$)---both methods fail for the same reason.
-\end{enumerate}
-
-The oracle retrieval experiment (\S\ref{sec:causal}) elevates behavioral mismatch from observational hypothesis to a causally supported finding, and the BM25 experiment confirms that even a standard retrieval backend recovers meaningful performance ($+12.2$pp at $N\!=\!8$). Notably, the student faithfully reproduces the teacher's search strategy (Jaccard $= 0.95$; \S\ref{sec:causal}), confirming that the bottleneck is execution capability rather than strategy learning. A 7B pooled SFT (\S\ref{sec:capacity}) quantifies the capacity contribution at \emph{at most} $\approx$12--14\% of the teacher--student gap---a minor but consistent factor across all $N$ values, while behavioral mismatch accounts for the remaining $\approx$86--88\% (Figure~\ref{fig:gap_decomposition}).
+The evidence converges on three points: (i)~\textbf{preference learning does not close the geometric gap}---DPO remains within $1$pp of SFT at $N\!=\!8$ despite richer training signal, against the $2$--$6\!\times$ vs.\ $1.47\!\times$ supra-random alignment gap (\S\ref{sec:framework}); (ii)~\textbf{the student imitates a strategy it cannot execute}---oracle retrieval recovers em\_partial $0.025\!\to\!0.498$ at $N\!=\!8$ ($+47.3$pp, $p<0.0001$; \S\ref{sec:causal}), confirming a viable search strategy (Jaccard $0.95$) but no execution environment; (iii)~\textbf{truncation distorts the comparison}---after controlling for budget, the DPO advantage shrinks from $+2.4$pp ($p<0.001$) to $+1.0$pp ($p=0.163$). Capacity (\S\ref{sec:capacity}) accounts for $\approx$12--14\% of the gap, behavioral mismatch the remaining $\approx$86--88\% (Figure~\ref{fig:gap_decomposition}); these are approximate, possibly non-additive decompositions.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{gap_decomposition.pdf}
-\caption{Decomposition of the teacher--student performance gap across objective counts. Capacity (7B vs.\ 3B SFT) accounts for a stable ${\sim}$12--14\%, while behavioral mismatch dominates at ${\sim}$86--88\%.}
+\caption{Teacher--student gap decomposition. Capacity (7B vs.\ 3B SFT) $\approx$12--14\%; behavioral mismatch $\approx$86--88\%.}
 \label{fig:gap_decomposition}
-\end{figure} We note that capacity and behavioral mismatch may interact non-additively, and additional factors (e.g., training-method differences) may also contribute; these percentages should be interpreted as approximate decompositions rather than exact attributions.
+\end{figure}
 
 %--------------------------------------------------------------
 \subsection{Cross-Backbone Replication}
 \label{sec:cross_backbone}
 
-A natural concern with the preceding analysis is whether the silent-failure mode and the behavioral-mismatch diagnosis generalise beyond the specific Qwen2.5-3B student. To test this, we re-run the entire distillation pipeline---same 1{,}118 teacher trajectories, same hash-based train/val/test split, same rank-32 LoRA on attention and MLP projections, same pooled $N\in\{2,4,8\}$ schedule, same 3-epoch $\text{lr}=2 \times 10^{-4}$ recipe, same eval protocol---on a Llama-3.2-1B student, a cross-family non-Qwen backbone at roughly one third the original student size.
+To test whether the diagnosis generalises beyond Qwen2.5-3B, we re-run the entire pipeline---same trajectories, splits, LoRA rank-32 recipe, and eval protocol---on Llama-3.2-1B, a cross-family backbone at $\sim$1/3 the size.
 
 \begin{table}[t]
 \centering
@@ -150,11 +134,4 @@ RL teacher (7B) & --- & $0.59$ & $0.54$ & $0.455$ \\
 \label{tab:cross_backbone}
 \end{table}
 
-\paragraph{Framework replicates, not just numbers.}
-Table~\ref{tab:cross_backbone} shows that every diagnostic signal the framework relies on reappears on Llama-1B: (i)~truncation scaling monotonically with $N$ ($29.9\% \to 51.2\% \to 85.6\%$, versus Qwen's $30.7\% \to 55.7\% \to 83.2\%$); (ii)~oracle-retrieval recovery with truncation dropping to $0\%$ across all $N$ (a $+33.7$pp oracle gain at $N\!=\!8$ against a smaller baseline); and (iii)~partial BM25 recovery that widens the deployable mitigation band. The gap between oracle and no-API is $+33.7/+33.8/+33.7$pp across $N\!=\!2/4/8$ for Llama-1B, versus $+41.8/+43.7/+47.3$pp for Qwen-3B; both are large and monotonic in $N$, and both collapse truncation to zero. A smaller backbone lowers the absolute ceiling---as capacity isolation would predict---without changing what the framework detects.
-
-\paragraph{Surface signature is backbone-agnostic.}
-At $N\!=\!8$ on the Llama-1B student we measure tool-call syntax $=1.00$, balanced XML tags $=1.00$, non-empty queries $=1.00$, action-sequence accuracy $=0.606$, BLEU $=1.16$, ROUGE-L $=0.21$ (Table~\ref{tab:silent_failure_demo}). These match the Qwen-3B student to within noise on every metric. Two observations follow: (a)~the specific blind spot we warn about---format compliance masking execution failure---does not depend on any Qwen-family idiosyncrasy, and (b)~because the Llama-1B student is cross-family and three times smaller, capacity is unlikely to be an omitted confound driving the surface numbers upward.
-
-\paragraph{Hallucinated-search truncation triangle.}
-The behavioral-mismatch mechanism predicts a specific empirical pattern: the student inherits the teacher's iterative search procedure, has no retrieval backend, and therefore burns its generation budget on hallucinated \texttt{<search>}/\texttt{<information>} cycles until truncation. The triangle of evidence is that (a)~no-API truncation grows with $N$, (b)~oracle retrieval drops truncation to $0\%$ across all $N$, and (c)~even BM25 drops truncation to $0\%$ once real passages displace the hallucinated ones. Llama-1B reproduces all three vertices of this triangle at effectively the same ratios as Qwen-3B. Because the mechanism is the same, the transferable lesson is that the diagnostic protocol---not the specific 3B model it was developed on---is what future practitioners should carry over. These near-identical point estimates reflect discrete action-prefix distributions and floor-level BLEU/ROUGE bunching, not coincidence; bootstrap 95\% CIs (Appendix~\ref{app:dispersion}) confirm CI overlap.
+Table~\ref{tab:cross_backbone} shows every diagnostic signal reappears on Llama-1B: (i)~truncation scales monotonically ($29.9\%\!\to\!51.2\%\!\to\!85.6\%$ vs.\ Qwen's $30.7\%\!\to\!55.7\%\!\to\!83.2\%$); (ii)~oracle retrieval drops truncation to $0\%$ at every $N$ with a $+33.7$pp gain at $N\!=\!8$ (vs.\ $+47.3$pp for Qwen, both large and monotonic in $N$); (iii)~BM25 partially recovers performance and also collapses truncation. Surface metrics at $N\!=\!8$ are backbone-agnostic to within noise: tool-call syntax $=1.00$, balanced XML $=1.00$, non-empty queries $=1.00$, action-sequence accuracy $=0.606$, BLEU $=1.16$, ROUGE-L $=0.21$ (Appendix~\ref{app:silent_failure_full}); the smaller cross-family backbone lowers the absolute ceiling but preserves the diagnostic shape. The transferable lesson is the protocol, not the specific 3B model it was developed on; near-identical surface estimates reflect discrete action-prefix and floor-level BLEU/ROUGE bunching, with overlapping bootstrap CIs (Appendix~\ref{app:dispersion}).

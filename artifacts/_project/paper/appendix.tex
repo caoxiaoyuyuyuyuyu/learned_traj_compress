@@ -81,6 +81,52 @@ All three DPO variants ($N \in \{2, 4, 8\}$) train for 1 epoch. Final training l
 
 See Figure~\ref{fig:svd_boxplot} in the main text for the per-layer SVD alignment boxplot.
 
+\section{SVD Weight Geometry Details}
+\label{app:svd_details}
+
+\paragraph{Definitions.}
+For a base weight matrix $\mathbf{W}_\text{base}\!\in\!\mathbb{R}^{m\times n}$ with truncated SVD $\mathbf{W}_\text{base}\!=\!\mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top$, retain the top-$k$ singular vectors $\mathbf{U}_k$, $\mathbf{V}_k$. The observed alignment of a fine-tuning delta $\Delta\mathbf{W}\!=\!\mathbf{W}_\text{ft}-\mathbf{W}_\text{base}$ is
+\[
+\alpha_\text{obs}(k)=\frac{\|\mathbf{U}_k^\top\Delta\mathbf{W}\,\mathbf{V}_k\|_F}{\|\Delta\mathbf{W}\|_F},
+\]
+and the alignment ratio is $r(k)=\alpha_\text{obs}(k)/\alpha_\text{rand}(k)$ where $\alpha_\text{rand}(k)$ is the mean projection norm over $n\!=\!100$ Gaussian random matrices matched in shape and entry variance to $\Delta\mathbf{W}$. We decompose into U-side ($\|\mathbf{U}_k^\top\Delta\mathbf{W}\|_F/\|\Delta\mathbf{W}\|_F$) and V-side ($\|\Delta\mathbf{W}\,\mathbf{V}_k\|_F/\|\Delta\mathbf{W}\|_F$) components capturing concentration along base output vs.\ input directions.
+
+\paragraph{Full alignment ratio table.}
+Across all 196 weight matrices of Qwen2.5-7B (28 layers $\times$ 7 projection types), Table~\ref{tab:svd_alignment} reports $r(k)$ for the three deltas RL--base, SFT--base, and RL--SFT.
+
+\begin{table}[h]
+\centering
+\resizebox{\columnwidth}{!}{%
+\small
+\begin{tabular}{lccccc}
+\toprule
+& $k\!=\!64$ & $k\!=\!128$ & $k\!=\!256$ & $k\!=\!512$ & $k\!=\!1024$ \\
+\midrule
+RL--base    & 6.48 & 4.11 & \underline{2.78} & 2.01 & 1.64 \\
+SFT--base   & 2.92 & ---  & \underline{1.47} & ---  & ---  \\
+RL--SFT     & 3.80 & ---  & 1.81 & ---  & ---  \\
+\midrule
+\multicolumn{6}{l}{\footnotesize\textit{RL/SFT ratio at matched $k$:}} \\
+\quad $r_\text{RL}/r_\text{SFT}$ & 2.22 & --- & 1.89 & --- & --- \\
+\bottomrule
+\end{tabular}%
+}
+\caption{SVD alignment ratio $r(k)$ for three weight deltas, averaged over 196 matrices. Wilcoxon $p\!<\!1.3\!\times\!10^{-32}$ at all $k$. ``---'' marks $k$ values not computed for SFT/RL--SFT due to compute budget.}
+\label{tab:svd_alignment}
+\end{table}
+
+\paragraph{Per-matrix dispersion.}
+At $k\!=\!256$ the per-matrix distribution is right-skewed: $r_\text{RL}\!=\!2.78\!\pm\!2.57$, $r_\text{SFT}\!=\!1.47\!\pm\!2.19$ (mean $\pm$ std), with a few outlier layers reaching $r\!>\!10$. Only 2--3 layers show $r_\text{SFT}\!>\!r_\text{RL}$ (most notably layer~1 \texttt{mlp.down\_proj}); in those cases both ratios remain $r\!>\!2$, so the exceptions are high-alignment for both methods rather than SFT-dominant.
+
+\paragraph{Layer-type decomposition.}
+The alignment gap is not uniform. At $k\!=\!256$, MLP layers show stronger RL--base alignment ($3.49\!\times$) than attention layers ($2.25\!\times$), while SFT--base alignment is $2.01\!\times$ for MLP and only $1.07\!\times$ for attention---SFT attention deltas are nearly indistinguishable from random. The multi-objective capability encoded in attention weights is therefore the most resistant component to SFT transfer.
+
+\paragraph{U-side / V-side asymmetry.}
+For attention layers, U-side alignment dominates V-side ($0.31$ vs.\ $0.12$ at $k\!=\!256$): RL modifies how attention \emph{writes} its output more than how it reads. For MLP layers the pattern reverses (U-side $0.05$, V-side $0.11$): RL modifies how MLP layers select input features. A successful distillation method would need to replicate not just the magnitude but the directional structure of RL changes across these layer types.
+
+\paragraph{Same-architecture comparison.}
+Both the RL and SFT models compared here are full-rank fine-tunes of the same Qwen2.5-7B base, so alignment ratios reflect differences in training objective (PPO vs.\ behavior cloning) rather than dimensional or rank confounds. The distillation experiments in \S\ref{sec:distillation} use a separate Qwen2.5-3B / LoRA rank-32 student, reflecting the deployment cost constraint.
+
 \section{Activation Probing Details}
 \label{app:probing}
 
@@ -158,6 +204,24 @@ An important methodological episode shaped our analysis. An earlier evaluation u
 \end{table}
 
 At 2048 tokens, $93.6\%$ of SFT outputs were truncated before the \texttt{<answer>} tag; extending to 4096 allowed $\sim$10\% more to complete. DPO's score was unchanged---its apparent advantage came from SFT being disproportionately penalized. A pilot attempt to suppress search tokens via bigram blocking was inconclusive: the model generated tag variants (malformed closing tags, inserted whitespace) that bypassed token-level suppression, suggesting the behavioral pattern is encoded above individual token sequences. This confound is specific to RL-distilled models whose procedural strategies produce verbose outputs; we report it as a methodological caution for future work.
+
+\section{Full Silent Failure Metric Breakdown}
+\label{app:silent_failure_full}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+ & Format-level & Content-level \\
+\midrule
+Qwen-2.5-3B  & $\approx 1.00$ (all checks) & em\_p=0.025 \\
+Llama-3.2-1B & $\approx 1.00$ (all checks) & em\_p=0.014 \\
+\bottomrule
+\end{tabular}
+\caption{Silent failure signature replicates across backbones. Format-level indicators (tool-call syntax, balanced XML tags, non-empty queries) $\approx$100\% for both; content-level em\_partial near-floor at $N\!=\!8$ (Qwen query Jaccard $=0.95$, also near-ceiling). Dispersion analysis in Appendix~\ref{app:dispersion}.}
+\label{tab:silent_failure_demo}
+\end{table}
 
 \section{Surface Metric Dispersion Analysis}
 \label{app:dispersion}
