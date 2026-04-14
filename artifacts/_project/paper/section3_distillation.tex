@@ -1,7 +1,7 @@
 \section{Distillation Attempt and Failure Analysis}
 \label{sec:distillation}
 
-Phase~1 narrowed the distillation failure to a geometric gap in weight space that SFT does not close. We now test whether this gap reflects a causal bottleneck---and if so, where it lies. We establish DPO and capacity baselines (\S\ref{sec:dpo_results}), examine the truncation--behavioral-mismatch link (\S\ref{sec:suppression}), and test the causal hypothesis (\S\ref{sec:causal}).
+Phase~1 localised a descriptive weight-geometry correlate and a negative activation-probing result. We now test causal interventions to identify where the failure actually lies. We establish DPO and capacity baselines (\S\ref{sec:dpo_results}), examine the truncation--behavioral-mismatch link (\S\ref{sec:suppression}), and test the causal hypothesis (\S\ref{sec:causal}).
 
 %--------------------------------------------------------------
 \subsection{Experimental Design}
@@ -29,7 +29,7 @@ The denominator is the \emph{teacher} sequence length, so a student that emits a
 \subsection{DPO and Capacity Ablations}
 \label{sec:dpo_results}
 
-We also evaluate DPO on matched preference pairs as a stronger-than-SFT baseline; the detailed analysis (Appendix~\ref{app:dpo}) confirms DPO yields only $+1.0$pp ($p=0.163$, power $>0.99$ at 5pp), ruling out preference learning as a fix.
+We also evaluate DPO on matched preference pairs as a stronger-than-SFT baseline; the detailed analysis (Appendix~\ref{app:dpo}) confirms DPO yields only $+1.0$pp ($p=0.163$, power $>0.99$ at 5pp), and does not close the gap at the 176-pair matched-sample scale (power excludes effects $\geq$ 5pp but remains scale-limited for smaller improvements).
 
 \paragraph{Capacity isolation.}
 \label{sec:capacity}
