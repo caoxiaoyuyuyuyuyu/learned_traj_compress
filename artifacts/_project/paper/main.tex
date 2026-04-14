@@ -17,7 +17,7 @@
 \usepackage{algpseudocode}
 
 % === Metadata ===
-\title{MemDistill: Diagnosing Why Distilling RL Agent Memory Fails}
+\title{MemDistill: Diagnosing Why Distilling RL Agent Memory Fails \\ \large A Case Study on MEM1 Multi-Hop Retrieval Agents}
 
 \author{
   Anonymous \\
@@ -49,6 +49,12 @@ All experiments use one RL teacher (MEM1, 7B) on one domain (multi-objective RAG
 
 \paragraph{DPO data scarcity and retrieval oracle.}
 DPO uses only 176 matched pairs ($0.4\%$ perfect rate at $N\!=\!8$), a structural consequence of multi-objective collapse, not a remediable sampling issue; power exceeds $0.99$ for a 5pp effect (floor 2.7pp). Oracle retrieval uses teacher passages and is thus an upper bound, but BM25 retrieval confirms the finding generalizes beyond the oracle setting ($+6$--$12$pp within the teacher's training document pool, truncation $\to 0\%$).
+
+\paragraph{Paraphrase-level leakage floor (not ablated).}
+Our passage-redaction ablation (\S\ref{sec:causal}, Appendix~\ref{app:redaction}) uses word-boundary substring matching on gold-answer strings. It therefore removes exact lexical exposure but leaves an irreducible \emph{paraphrase-level} leakage floor---e.g., ``Einstein's theory'' surviving after ``Albert Einstein'' is redacted, or semantic rewordings that encode the answer without matching any gold substring. A paraphrase-aware or entailment-aware redactor was considered but not run in this paper (Appendix~\ref{app:redaction_limitations}). Consequently, the reported $+11$\,pp retrieval-quality residual is itself an upper bound on the non-leakage mechanism, and the $+37$\,pp leakage component is a lower bound; tightening these would require a held-out paraphrase-redacted replay that we flag as a direct follow-up.
+
+\paragraph{Question-side residual leakage.}
+\texttt{oracle\_redacted\_full} redacts passage \texttt{<information>} blocks but not user-question blocks, and a residual leakage probe (Appendix~\ref{app:redaction_limitations}) finds that $\sim\!60\%$ ($75/125$) of user-question blocks at $N\!=\!8$ still expose partial disjunctive answer content because the multi-hop questions enumerate candidates by structural necessity. Between-condition deltas are symmetric (the three oracle conditions share the same user-question block), so the $+11.0$\,pp retrieval residual is unaffected, but absolute leakage floors are overestimated by this structural source. A \texttt{question\_redacted} counterfactual condition (not run in this paper) would be needed to isolate pure retrieval contribution from structural question-side leakage, and we flag it as a sensitivity direction for future work.
 
 % === Ethics Statement (ACL requirement) ===
 \section*{Ethics Statement}
