@@ -1,3 +1,19 @@
+## [2026-04-14 12:05 UTC] v3.7 rebuttal: 两处 Director/任务模板事实修正
+
+v3.7 修订过程中 worker 纠正了两条之前的错误假设（来自 Director 指令模板或我的任务 prompt）:
+
+### Correction 1 — exp_015 不是 half-density run
+之前任务模板假设 exp_015 是一次失败的 half-density 实验。**事实**: exp_015 是 Kang 2025 CodeAct vs ReAct 协议族交叉工作验证，在 Phase 0 因 **CodeAct vs ReAct protocol-family mismatch** 被终止。与半密度无关。v3.7 §1 的 exp_015 披露已按真实事实写入，并作为"论文scope 限定在 ReAct 家族"的依据。
+
+**How to apply**: 未来提及 exp_015 必须说 "Kang 2025 cross-work validation, CodeAct/ReAct protocol-family mismatch, Phase 0 aborted"，不要复制旧任务模板里 "failed half-density run" 的错误叙述。
+
+### Correction 2 — oracle_redacted_full 的 retrieval residual 并不 beat BM25
+之前 v3.7 task prompt 里我写的 W4 方向 "oracle_redacted_full's retrieval-only residual still beats BM25" **是错的**。实测: N=8 下 oracle_redacted_full = 0.131 < BM25 = 0.147。worker 没有写这个错误 claim，改为把 BM25 定位为"现实 baseline"，oracle 定位为"upper-bound probe"，不做两者的高低对比。
+
+**How to apply**: 描述 retrieval residual 时,不要与 BM25 做"高于"比较。 +11.0pp retrieval residual 是 **相对 honest_search baseline** 的增益,不是相对 BM25。partial_mechanism 23/77 分解 仍然 稳健 (oracle_full 相对 honest_search 的 +47.7pp 分解),但 oracle_redacted_full 的绝对得分低于 BM25 这一事实需要在未来引用时注意。
+
+---
+
 ## [2026-04-14 10:00 UTC] phase1d_v2 test set = per-N canonical partitions
 
 phase1d_v2 不是单一 n=125，是 per-N canonical partitions:
